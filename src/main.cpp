@@ -409,22 +409,30 @@ static void tickerDraw(const ticker::ScreenStatus& status, const bool fullRefres
   bool ok = true;
   if (doFetch) {
     ok = false;
+    bool customDownloaded = false;
     if (ticker::connectWifi(12000)) {
       if (ticker::ntpDue(now) && halClock.syncFromNTP()) {
         now = ticker::nowUtc();
         ticker::markNtpSynced(now);
       }
-      ok = ticker::fetchQuotes(cfg, now);
-      if (ok) ticker::saveCache();
+      ok = true;
+      if (ticker::wantsQuotes(cfg)) {
+        ok = ticker::fetchQuotes(cfg, now);
+        if (ok) ticker::saveCache();
+      }
+      if (ticker::customEnabled(cfg)) customDownloaded = ticker::downloadCustomImage(cfg);
     }
     ticker::wifiOff();
+    if (ticker::customEnabled(cfg)) ok = customDownloaded && ticker::prepareCustomImage(cfg) && ok;
     const uint32_t retry = ticker::noteFetchResult(ok);
-    const bool hasCrypto = ticker::anyCrypto(cfg);
+    // Webhook-fed custom images, like crypto, change outside market hours.
+    const bool hasCrypto = ticker::anyCrypto(cfg) || ticker::customEnabled(cfg);
     ticker::setNextFetch(now > 0 ? now + (retry > 0 ? retry : ticker::nextRefreshSeconds(cfg, now, hasCrypto)) : 0);
   }
 
-  const bool rotating = cfg.layout == ticker::LAYOUT_ROTATE && cfg.symbolCount > 1;
-  if (rotating && fromTimer) ticker::advanceRotation(cfg.symbolCount);
+  const int pages = ticker::pageCount(cfg);
+  const bool rotating = pages > 1;
+  if (rotating && fromTimer) ticker::advanceRotation(pages);
 
   // Next wake: the next fetch, or sooner for a rotation step while rotation is active.
   const time_t nextFetch = ticker::nextFetchAt();
@@ -773,6 +781,34 @@ void loop() {
         if (ok) ticker::saveCache();
         ticker::wifiOff();
         logSerial.printf("TICKER_FETCH:%d\n", ok ? 1 : 0);
+      } else if (cmd.startsWith("TICKER URL ")) {
+        // "TICKER URL <mode 0-2> <url>" sets the custom image source and saves it.
+        int mode = 0;
+        char url[ticker::CUSTOM_URL_LEN] = "";
+        sscanf(cmd.c_str() + 11, "%d %159s", &mode, url);
+        ticker::loadConfig();
+        ticker::config().customMode = static_cast<uint8_t>(mode < ticker::CUSTOM_MODE_COUNT ? mode : 0);
+        ticker::setCustomUrl(url);
+        ticker::saveConfig();
+        logSerial.printf("TICKER_URL:%d %s\n", ticker::config().customMode, ticker::config().customUrl);
+      } else if (cmd == "TICKER CUSTOM") {
+        // Fetches the custom image URL and shows the custom page.
+        ticker::loadConfig();
+        const auto& cfg = ticker::config();
+        const bool downloaded = ticker::connectWifi(12000) && ticker::downloadCustomImage(cfg);
+        ticker::wifiOff();
+        const bool ok = downloaded && ticker::prepareCustomImage(cfg);
+        ticker::ScreenStatus status;
+        status.offline = !ok;
+        status.pageIndex = ticker::pageCount(cfg) - 1;
+        {
+          RenderLock lock;
+          const auto saved = renderer.getOrientation();
+          ticker::drawScreen(renderer, cfg, status);
+          renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+          renderer.setOrientation(saved);
+        }
+        logSerial.printf("TICKER_CUSTOM:%d\n", ok ? 1 : 0);
       } else if (cmd.startsWith("TICKER SHOW ")) {
         int layout = 0, orient = 0, page = 0;
         char syms[64] = "";

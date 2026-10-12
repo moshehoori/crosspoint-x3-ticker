@@ -203,6 +203,9 @@ bool loadConfig() {
   const uint8_t o = doc["orientation"] | 0;
   gConfig.orientation = o < ORIENTATION_COUNT ? o : PORTRAIT;
   gConfig.active = doc["active"] | false;
+  const uint8_t cm = doc["customMode"] | 0;
+  gConfig.customMode = cm < CUSTOM_MODE_COUNT ? cm : CUSTOM_OFF;
+  snprintf(gConfig.customUrl, sizeof(gConfig.customUrl), "%s", doc["customUrl"] | "");
   return true;
 }
 
@@ -216,6 +219,8 @@ bool saveConfig() {
   doc["marketHoursOnly"] = gConfig.marketHoursOnly;
   doc["orientation"] = gConfig.orientation;
   doc["active"] = gConfig.active;
+  doc["customMode"] = gConfig.customMode;
+  doc["customUrl"] = gConfig.customUrl;
   return PersistableStoreBase::writeDocToFile(CONFIG_PATH, doc);
 }
 
@@ -233,6 +238,42 @@ const char* orientationLabel(uint8_t o) {
 
 const char* layoutLabel(uint8_t l) {
   return l == LAYOUT_ROTATE ? tr(STR_TICKER_LAYOUT_ROTATE) : tr(STR_TICKER_LAYOUT_GRID);
+}
+
+bool customEnabled(const Config& cfg) { return cfg.customMode != CUSTOM_OFF && cfg.customUrl[0] != '\0'; }
+
+bool wantsQuotes(const Config& cfg) { return !(customEnabled(cfg) && cfg.customMode == CUSTOM_ONLY); }
+
+int pageCount(const Config& cfg) {
+  if (!wantsQuotes(cfg)) return 1;
+  const int base = (cfg.layout == LAYOUT_ROTATE && cfg.symbolCount > 1) ? cfg.symbolCount : 1;
+  return base + (customEnabled(cfg) ? 1 : 0);
+}
+
+bool isCustomPage(const Config& cfg, int page) {
+  if (!customEnabled(cfg)) return false;
+  return cfg.customMode == CUSTOM_ONLY || page == pageCount(cfg) - 1;
+}
+
+const char* customModeLabel(uint8_t m) {
+  switch (m) {
+    case CUSTOM_ONLY:
+      return tr(STR_TICKER_CUSTOM_ONLY);
+    case CUSTOM_EXTRA_PAGE:
+      return tr(STR_TICKER_CUSTOM_PAGE);
+    case CUSTOM_OFF:
+    default:
+      return tr(STR_STATE_OFF);
+  }
+}
+
+void setCustomUrl(const char* url) {
+  // Trim surrounding whitespace; keep anything else verbatim (query strings, tokens).
+  while (*url == ' ') url++;
+  snprintf(gConfig.customUrl, sizeof(gConfig.customUrl), "%s", url);
+  for (int i = static_cast<int>(strlen(gConfig.customUrl)) - 1; i >= 0 && gConfig.customUrl[i] == ' '; i--) {
+    gConfig.customUrl[i] = '\0';
+  }
 }
 
 bool isCrypto(const char* symbol) {
@@ -496,6 +537,7 @@ bool fetchQuotes(const Config& cfg, time_t now) {
 }
 
 FetchError lastError() { return gLastError; }
+void setLastError(FetchError e) { gLastError = e; }
 
 const char* errorMessage(FetchError e) {
   switch (e) {
@@ -514,7 +556,8 @@ const char* errorMessage(FetchError e) {
 
 uint32_t nextRefreshSeconds(const Config& cfg, time_t now, bool hasCrypto) {
   const uint32_t interval = static_cast<uint32_t>(cfg.intervalMin) * 60u;
-  if (!cfg.marketHoursOnly || now == 0) return interval;
+  // An image-only setup has no market to follow.
+  if (!cfg.marketHoursOnly || now == 0 || !wantsQuotes(cfg)) return interval;
 
   const NyClock c = nyClock(now);
   if (marketOpen(c)) {

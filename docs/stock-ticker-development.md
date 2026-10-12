@@ -26,6 +26,8 @@ flowchart TD
 | Path | Role |
 | --- | --- |
 | `src/ticker/Ticker.h/.cpp` | Config (`/.crosspoint/ticker.json`), quote cache (`ticker_cache.json`), Wi-Fi join, Yahoo fetch and parse, New York market schedule, wake bookkeeping kept in RTC memory |
+| `src/ticker/TickerCustom.cpp` | Custom image: download to SD with Wi-Fi up, then validate or convert (PNG to 1-bit BMP) with Wi-Fi off, and swap in only a known-good image |
+| `tools/stock-ticker/webhook_server.py` | Webhook receiver that renders the latest payload (text, items, image, chart) to a 1-bit PNG |
 | `src/ticker/TickerScreen.cpp` | Rendering: grid cards, single-symbol page, seven-segment price digits, charts, status line, logos |
 | `src/activities/settings/TickerActivity.*` | The settings menu and the full-screen preview |
 | `src/main.cpp` | `runTickerCycle()`, the timer-wake branch in `setup()`, `enterTickerSleep()`, and the serial debug commands |
@@ -42,6 +44,7 @@ flowchart TD
 - **Clock.** "Now" comes from the X3's DS3231 clock chip through `HalClock`, with NTP re-sync at most once per day. New York time and DST are computed from the UTC epoch (`nyOffsetSeconds()`), independent of the user's timezone. Sleeps are capped at 3 hours, and early wakes go back to sleep, which bounds drift in the chip's internal sleep timer.
 - **CPU speed before Wi-Fi.** The UI drops the CPU to a low-power clock when idle, and the Wi-Fi radio won't start at that clock. `connectWifi()` calls `powerManager.setPowerSaving(false)` first. Power saving then stays off while Wi-Fi is up.
 - **Memory.** A fetch inside the UI leaves about 33 KB fragmented until a reboot. The activity reboots back to Settings on exit, like CrossPoint's other Wi-Fi screens. A second fetch in the same visit is refused by the TLS memory pre-check, and the screen shows *Low memory*. Timer wakes always start from a fresh boot, so they never see a fragmented heap.
+- **Custom images decode with Wi-Fi off.** Converting a 792 × 528 PNG to a 1-bit BMP needs the PNG decoder plus dither row buffers. With the radio up, the first conversion after boot ran out of memory (`OOM: Atkinson1BitDitherer`). Downloading first, then turning Wi-Fi off before converting, fixed it. The end-to-end test compares the reader's screen with the served image pixel by pixel.
 - **Big digits.** Built-in fonts top out at 18 pt, so prices use drawn seven-segment glyphs that scale down to fit their box (`fitBigHeight()`). Logos are plotted pixel by pixel because `GfxRenderer::drawImage()` doesn't rotate bits for landscape.
 
 ## Building
@@ -70,6 +73,8 @@ Development builds (`default` environment) accept serial commands:
 | --- | --- |
 | `CMD:SCREENSHOT` | Dumps the framebuffer (upstream CrossPoint) |
 | `CMD:TICKER FETCH` | Joins Wi-Fi and refreshes the quote cache for the saved symbols; replies `TICKER_FETCH:1` or `TICKER_FETCH:0` |
+| `CMD:TICKER URL <mode> <url>` | Sets the custom image mode (0 = off, 1 = only, 2 = extra page) and URL, and saves them; replies `TICKER_URL:...` |
+| `CMD:TICKER CUSTOM` | Downloads the custom image, converts it with Wi-Fi off, and shows it; replies `TICKER_CUSTOM:1` or `TICKER_CUSTOM:0` |
 | `CMD:TICKER SHOW <layout> <orientation> <page> <symbols>` | Draws a layout from cached quotes without changing the saved config; replies `TICKER_SHOWN`. Layout: 0 = grid, 1 = rotate. Orientation: 0 = portrait, 1 = landscape CCW, 2 = landscape CW |
 
 `tools/stock-ticker` wraps them:

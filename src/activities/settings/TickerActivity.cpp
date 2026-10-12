@@ -28,12 +28,15 @@ enum Row {
   ROW_INTERVAL,
   ROW_MARKET_HOURS,
   ROW_ORIENTATION,
+  ROW_CUSTOM_MODE,
+  ROW_CUSTOM_URL,
 };
 
 constexpr StrId ROW_NAMES[TickerActivity::MENU_ITEMS] = {StrId::STR_TICKER_START,        StrId::STR_TICKER_REFRESH,
                                                          StrId::STR_TICKER_SYMBOLS,      StrId::STR_TICKER_LAYOUT,
                                                          StrId::STR_TICKER_ROTATE_EVERY, StrId::STR_TICKER_INTERVAL,
-                                                         StrId::STR_TICKER_MARKET_HOURS, StrId::STR_TICKER_SCREEN};
+                                                         StrId::STR_TICKER_MARKET_HOURS, StrId::STR_TICKER_SCREEN,
+                                                         StrId::STR_TICKER_CUSTOM,       StrId::STR_TICKER_CUSTOM_URL};
 
 template <size_t N>
 uint8_t nextInList(const uint8_t (&list)[N], uint8_t current) {
@@ -119,6 +122,19 @@ void TickerActivity::activateIndex(const int index) {
     case ROW_ORIENTATION:
       cfg.orientation = static_cast<uint8_t>((cfg.orientation + 1) % ticker::ORIENTATION_COUNT);
       break;
+    case ROW_CUSTOM_MODE:
+      cfg.customMode = static_cast<uint8_t>((cfg.customMode + 1) % ticker::CUSTOM_MODE_COUNT);
+      break;
+    case ROW_CUSTOM_URL:
+      startActivityForResult(std::make_unique<KeyboardEntryActivity>(renderer, mappedInput, tr(STR_TICKER_CUSTOM_URL),
+                                                                     cfg.customUrl[0] ? cfg.customUrl : "http://",
+                                                                     ticker::CUSTOM_URL_LEN - 1, InputType::Url),
+                             [](const ActivityResult& result) {
+                               if (result.isCancelled) return;
+                               ticker::setCustomUrl(std::get<KeyboardResult>(result.data).text.c_str());
+                               ticker::saveConfig();
+                             });
+      return;
     default:
       return;
   }
@@ -133,11 +149,20 @@ void TickerActivity::refreshNow() {
   }
   usedWifi = true;
   bool ok = false;
+  bool customDownloaded = false;
   if (ticker::connectWifi(12000)) {
-    ok = ticker::fetchQuotes(ticker::config(), ticker::nowUtc());
-    if (ok) ticker::saveCache();
+    const auto& cfg = ticker::config();
+    ok = true;
+    if (ticker::wantsQuotes(cfg)) {
+      ok = ticker::fetchQuotes(cfg, ticker::nowUtc());
+      if (ok) ticker::saveCache();
+    }
+    if (ticker::customEnabled(cfg)) customDownloaded = ticker::downloadCustomImage(cfg);
   }
   ticker::wifiOff();
+  if (ticker::customEnabled(ticker::config())) {
+    ok = customDownloaded && ticker::prepareCustomImage(ticker::config()) && ok;
+  }
   auto preview = makeUniqueNoThrow<TickerPreviewActivity>(renderer, mappedInput, !ok);
   if (!preview) {
     LOG_ERR("TICK", "OOM: TickerPreviewActivity");
@@ -177,6 +202,8 @@ void TickerActivity::buildScreen(UiScreen& screen) {
   rowValues_[ROW_INTERVAL] = buf;
   rowValues_[ROW_MARKET_HOURS] = cfg.marketHoursOnly ? tr(STR_STATE_ON) : tr(STR_STATE_OFF);
   rowValues_[ROW_ORIENTATION] = ticker::orientationLabel(cfg.orientation);
+  rowValues_[ROW_CUSTOM_MODE] = ticker::customModeLabel(cfg.customMode);
+  rowValues_[ROW_CUSTOM_URL] = cfg.customUrl[0] ? cfg.customUrl : tr(STR_NOT_SET);
   for (int i = 0; i < MENU_ITEMS; i++) {
     rowItems_[i].value = rowValues_[i].empty() ? nullptr : rowValues_[i].c_str();
   }
@@ -200,11 +227,11 @@ void TickerPreviewActivity::onEnter() {
 
 void TickerPreviewActivity::loop() {
   const auto& cfg = ticker::config();
-  const bool paged = cfg.layout == ticker::LAYOUT_ROTATE && cfg.symbolCount > 1;
+  const bool paged = ticker::pageCount(cfg) > 1;
   if (paged && (mappedInput.wasReleased(MappedInputManager::Button::Confirm) ||
                 mappedInput.wasReleased(MappedInputManager::Button::Down) ||
                 mappedInput.wasReleased(MappedInputManager::Button::Right))) {
-    page = (page + 1) % cfg.symbolCount;
+    page = (page + 1) % ticker::pageCount(cfg);
     requestUpdate();
     return;
   }

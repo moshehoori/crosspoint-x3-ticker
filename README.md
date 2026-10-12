@@ -8,6 +8,7 @@ This is a fork of [CrossPoint Reader](https://github.com/crosspoint-reader/cross
 - **Two layouts:** all on one screen, or rotating one full screen per symbol, in portrait or landscape
 - **Low power:** the reader deep-sleeps between updates while e-ink holds the image, wakes on a timer, refreshes over your saved Wi-Fi in a few seconds, and sleeps again
 - **Market-hours aware:** stocks update only while the New York market is open, and crypto keeps updating hourly overnight
+- **Webhooks and custom images:** show any PNG from a URL as a page; the included webhook server turns JSON (text, pictures, charts) into an image
 - **Settings from the browser:** File Transfer's web settings page has a Stock Ticker section
 - **Intel and Bitcoin logos**, plus a small *Hello Clock* demo app
 

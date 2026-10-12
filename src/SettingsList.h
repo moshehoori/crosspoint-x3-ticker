@@ -212,7 +212,7 @@ inline std::vector<StrId> homeThemeValues() {
 inline std::vector<SettingInfo> getTickerSettingsList() {
   using namespace ticker;
   std::vector<SettingInfo> v;
-  v.reserve(6);
+  v.reserve(8);
   auto minuteLabels = [](const uint8_t* steps, int count, bool zeroIsEachUpdate) {
     std::vector<std::string> labels;
     labels.reserve(count);
@@ -269,6 +269,15 @@ inline std::vector<SettingInfo> getTickerSettingsList() {
       StrId::STR_TICKER_SCREEN, {StrId::STR_PORTRAIT, StrId::STR_LANDSCAPE_CCW, StrId::STR_LANDSCAPE_CW},
       [] { return config().orientation; }, [](uint8_t val) { config().orientation = val; }, "tickerOrientation",
       StrId::STR_TICKER));
+
+  v.push_back(SettingInfo::DynamicEnum(
+      StrId::STR_TICKER_CUSTOM, {StrId::STR_STATE_OFF, StrId::STR_TICKER_CUSTOM_ONLY, StrId::STR_TICKER_CUSTOM_PAGE},
+      [] { return config().customMode; }, [](uint8_t val) { config().customMode = val; }, "tickerCustomMode",
+      StrId::STR_TICKER));
+
+  v.push_back(SettingInfo::DynamicString(
+      StrId::STR_TICKER_CUSTOM_URL, [] { return std::string(config().customUrl); },
+      [](const std::string& val) { setCustomUrl(val.c_str()); }, "tickerCustomUrl", StrId::STR_TICKER));
   return v;
 }
 

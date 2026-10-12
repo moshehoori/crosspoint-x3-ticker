@@ -10,7 +10,7 @@ class TickerActivity final : public UiListActivity {
  public:
   explicit TickerActivity(GfxRenderer& renderer, MappedInputManager& mappedInput);
 
-  static constexpr int MENU_ITEMS = 8;
+  static constexpr int MENU_ITEMS = 10;
 
   void onEnter() override;
   void onExit() override;
@@ -28,8 +28,8 @@ class TickerActivity final : public UiListActivity {
   freeink::ui::ListItem rowItems_[MENU_ITEMS]{};
 };
 
-// Full-screen preview of the ticker screen. Confirm/Down pages through symbols in
-// the Rotate layout; Back returns.
+// Full-screen preview of the ticker screen. Confirm/Down pages through the pages
+// (symbols in the Rotate layout, plus the custom image); Back returns.
 class TickerPreviewActivity final : public Activity {
  public:
   TickerPreviewActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, bool fetchFailed)

@@ -11,8 +11,15 @@ for _ in $(seq 1 12000); do PORT=$(ls /dev/ttyACM* 2>/dev/null | head -1); [ -n 
 echo "Found $PORT"
 # Reset into the ROM bootloader and stay there, so the port no longer disappears.
 esptool --chip esp32c3 --port "$PORT" --before default-reset --after no-reset chip-id
-sleep 1
-esptool --chip esp32c3 --port "$PORT" --before no-reset --after no-reset --baud 460800 write-flash 0x10000 "$FW"
+sleep 1.5
+PORT=$(ls /dev/ttyACM* 2>/dev/null | head -1)
+out=$(esptool --chip esp32c3 --port "$PORT" --before no-reset --after no-reset --baud 460800 write-flash 0x10000 "$FW" 2>&1)
+echo "$out" | tail -3
+if ! echo "$out" | grep -q "Hash of data verified"; then
+  # Never switch the boot slot after a failed write: the reader keeps booting what it has.
+  echo "Write failed; boot selection left unchanged. Wake the reader and run this again."
+  exit 1
+fi
 # Erase OTA data so the bootloader runs app0 (where we just wrote), not a previous image in app1.
 esptool --chip esp32c3 --port "$PORT" --before no-reset --after no-reset erase-region 0xe000 0x2000
 esptool --chip esp32c3 --port "$PORT" --before no-reset --after hard-reset chip-id

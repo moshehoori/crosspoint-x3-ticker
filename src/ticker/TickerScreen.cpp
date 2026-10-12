@@ -1,4 +1,6 @@
+#include <Bitmap.h>
 #include <GfxRenderer.h>
+#include <HalStorage.h>
 #include <I18n.h>
 
 #include <cmath>
@@ -466,6 +468,34 @@ int statusHeight(const GfxRenderer& r, const ScreenStatus& s) {
   return (s.nextUpdate > 0 ? 2 * smallH + 2 : smallH) + 12;
 }
 
+// Full-screen custom image, centered; a small "Offline" badge when the last fetch failed.
+void drawCustomPage(const GfxRenderer& r, const ScreenStatus& s) {
+  const int W = r.getScreenWidth();
+  const int H = r.getScreenHeight();
+  bool drawn = false;
+  {
+    HalFile file;
+    if (Storage.openFileForRead("TICK", CUSTOM_IMAGE_PATH, file)) {
+      Bitmap bitmap(file, true);
+      if (bitmap.parseHeaders() == BmpReaderError::Ok) {
+        const int x = bitmap.getWidth() < W ? (W - bitmap.getWidth()) / 2 : 0;
+        const int y = bitmap.getHeight() < H ? (H - bitmap.getHeight()) / 2 : 0;
+        drawn = r.drawBitmap(bitmap, x, y, W, H);
+      }
+    }
+  }
+  if (!drawn) {
+    r.drawCenteredText(NOTOSANS_18_FONT_ID, H / 2 - 20, tr(STR_TICKER_CUSTOM_NONE), true, EpdFontFamily::BOLD);
+  }
+  if (s.offline) {
+    const char* text = tr(STR_TICKER_OFFLINE);
+    const int tw = r.getTextWidth(SMALL_FONT_ID, text, EpdFontFamily::BOLD);
+    const int th = r.getLineHeight(SMALL_FONT_ID);
+    r.fillRect(W - tw - 16, H - th - 10, tw + 12, th + 6, true);
+    r.drawText(SMALL_FONT_ID, W - tw - 10, H - th - 7, text, false, EpdFontFamily::BOLD);
+  }
+}
+
 }  // namespace
 
 void drawScreen(GfxRenderer& r, const Config& cfg, const ScreenStatus& s) {
@@ -476,9 +506,15 @@ void drawScreen(GfxRenderer& r, const Config& cfg, const ScreenStatus& s) {
   const int bottom = H - MARGIN + 8;
   const int statusTop = bottom - statusHeight(r, s);
 
+  const int pages = pageCount(cfg);
+  const int page = pages > 0 ? s.pageIndex % pages : 0;
+  if (isCustomPage(cfg, page)) {
+    drawCustomPage(r, s);
+    return;  // the image owns the whole screen
+  }
   if (cfg.layout == LAYOUT_ROTATE || cfg.symbolCount == 1) {
-    const int page = cfg.symbolCount > 0 ? s.pageIndex % cfg.symbolCount : 0;
-    drawSinglePage(r, quotes()[page], cfg.symbols[page], page, cfg.symbolCount, W, statusTop);
+    const int sym = cfg.symbolCount > 0 ? page % cfg.symbolCount : 0;
+    drawSinglePage(r, quotes()[sym], cfg.symbols[sym], sym, cfg.symbolCount, W, statusTop);
   } else {
     drawGrid(r, cfg, W, statusTop);
   }

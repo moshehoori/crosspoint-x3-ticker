@@ -55,6 +55,8 @@ A status line at the bottom shows when the data was fetched, when the next updat
 | **Refresh interval** | 5, 10, 15 (default), 30 or 60 minutes. |
 | **Market hours only** | On by default. See [Schedule](#schedule). |
 | **Screen orientation** | Portrait, Landscape CCW, or Landscape CW. |
+| **Custom image** | *Off*, *Only the image*, or *Extra page* (shown in turn with your stocks). See [Custom images and webhooks](#custom-images-and-webhooks). |
+| **Custom image URL** | An `http://` or `https://` address that returns a PNG or BMP. |
 
 ### From a browser
 
@@ -70,6 +72,8 @@ Scripts can use the same API. These keys go in `POST /api/settings`, and enum va
 | `tickerIntervalMin` | index into 5, 10, 15, 30, 60 min |
 | `tickerMarketHoursOnly` | 0 = Off, 1 = On |
 | `tickerOrientation` | 0 = Portrait, 1 = Landscape CCW, 2 = Landscape CW |
+| `tickerCustomMode` | 0 = Off, 1 = Only the image, 2 = Extra page |
+| `tickerCustomUrl` | `"http://192.168.1.10:8080/dashboard.png?w=792&h=528"` |
 
 ```bash
 curl -X POST -H "Content-Type: application/json" \
@@ -78,6 +82,53 @@ curl -X POST -H "Content-Type: application/json" \
 ```
 
 **To leave ticker mode, hold the power button** until the reader wakes. It returns to normal, and your usual sleep screen applies again.
+
+## Custom images and webhooks
+
+The ticker can also show **any image from a URL**. On each update, the reader downloads a PNG or BMP and shows it full-screen. It can be the only page, or an extra page that rotates with your stocks. Use it for anything a server can draw: notifications, a calendar, home sensors, build status.
+
+![A webhook with text, the Intel logo and a chart, as shown on the reader](images/stock-ticker/custom-webhook-intel.png)
+
+**Webhooks:** the reader sleeps between updates, so it can't receive a webhook directly. Something always-on receives the webhook and serves the latest result as an image, and the reader pulls it on its next wake. `tools/stock-ticker/webhook_server.py` does exactly that. Run it on any always-on computer:
+
+```bash
+pip install pillow
+python3 tools/stock-ticker/webhook_server.py --port 8080
+```
+
+Set **Custom image URL** to `http://<that-computer>:8080/dashboard.png?w=792&h=528`. For portrait, use `w=528&h=792`. Then send webhooks:
+
+```bash
+curl -X POST -H "Content-Type: application/json" http://<that-computer>:8080/webhook -d '{
+  "title": "Front door",
+  "text": "Package delivered",
+  "items": [{"label": "Temperature", "value": "23 C"}],
+  "image": "https://example.com/camera-snapshot.png",
+  "chart": [21.5, 22.0, 22.8, 23.1],
+  "chart_title": "Temperature today"
+}'
+```
+
+| Field | Shown as |
+| --- | --- |
+| `title` | Large heading |
+| `text` | Wrapped paragraph |
+| `items` | Label and value rows |
+| `image` | A picture, given as an http(s) URL or base64 (`data:image/png;base64,...`), dithered into black-and-white dots |
+| `chart` + `chart_title` | Line chart with low, high and latest values |
+| any other key | An extra label and value row |
+
+| Text, picture and chart | Picture from a URL and chart |
+| --- | --- |
+| ![Intel webhook on the reader](images/stock-ticker/custom-webhook-intel.png) | ![Bitcoin webhook on the reader](images/stock-ticker/custom-webhook-bitcoin.png) |
+
+These screenshots were taken from the reader. They match the server's image pixel for pixel.
+
+**Other image sources:** anything that serves a PNG or BMP works, for example Home Assistant, n8n, a Cloudflare Worker, or a static file. Images are scaled down to fit and converted to black and white on the reader. For the sharpest result, serve a 1-bit image at the screen size: 792 × 528, or 528 × 792 in portrait.
+
+**Schedule:** with *Only the image*, the reader refreshes every interval around the clock. With *Extra page*, the image follows the crypto rule: every interval during market hours, hourly otherwise.
+
+**Failures:** if the server can't be reached or returns something that isn't an image, the reader keeps the last good image and shows a small **Offline** badge in the corner.
 
 ## Schedule
 
@@ -127,7 +178,7 @@ Quotes come from Yahoo Finance's public chart endpoint (`/v7/finance/spark`), on
 
 ## Updates
 
-The fork's version is `1.6.5-ticker.2`. CrossPoint's built-in **Check for Updates** compares only the first three numbers. It won't offer stock 1.6.5, but it will offer a future official release such as 1.6.6. Installing that replaces this firmware, and the ticker goes away.
+The fork's version is `1.6.5-ticker.3`. CrossPoint's built-in **Check for Updates** compares only the first three numbers. It won't offer stock 1.6.5, but it will offer a future official release such as 1.6.6. Installing that replaces this firmware, and the ticker goes away.
 
 ## Trademarks
 

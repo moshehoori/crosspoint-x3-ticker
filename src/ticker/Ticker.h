@@ -23,6 +23,10 @@ constexpr uint32_t CRYPTO_OFF_HOURS_S = 60 * 60;  // crypto refresh while the st
 
 enum Orientation : uint8_t { PORTRAIT = 0, LANDSCAPE_LEFT = 1, LANDSCAPE_RIGHT = 2, ORIENTATION_COUNT };
 enum Layout : uint8_t { LAYOUT_GRID = 0, LAYOUT_ROTATE = 1, LAYOUT_COUNT };
+// Custom image page: a PNG/BMP pulled from a URL (e.g. a server that turns webhooks into an image).
+enum CustomMode : uint8_t { CUSTOM_OFF = 0, CUSTOM_ONLY = 1, CUSTOM_EXTRA_PAGE = 2, CUSTOM_MODE_COUNT };
+constexpr int CUSTOM_URL_LEN = 160;
+constexpr char CUSTOM_IMAGE_PATH[] = "/.crosspoint/ticker_custom.bmp";
 
 struct Config {
   char symbols[MAX_SYMBOLS][SYMBOL_LEN] = {"INTC", "BTC-USD"};
@@ -33,6 +37,8 @@ struct Config {
   bool marketHoursOnly = true;
   uint8_t orientation = PORTRAIT;
   bool active = false;  // ticker mode armed: timer wakes refresh instead of booting the UI
+  uint8_t customMode = CUSTOM_OFF;
+  char customUrl[CUSTOM_URL_LEN] = "";
 };
 
 struct Quote {
@@ -90,6 +96,7 @@ bool fetchQuotes(const Config& cfg, time_t now);
 // Why the last connectWifi()/fetchQuotes() failed, for an accurate on-screen message.
 enum class FetchError : uint8_t { None, Wifi, Memory, Network, Data };
 FetchError lastError();
+void setLastError(FetchError e);
 const char* errorMessage(FetchError e);
 
 // Seconds until the next fetch per config (market-hours and crypto aware), >= 60.
@@ -114,7 +121,24 @@ uint32_t capSleep(uint32_t seconds);
 
 void appendLog(time_t now, int battery, bool fetched, bool ok, uint32_t awakeMs);
 
-// Draws the configured layout (grid of all symbols, or the rotation page in status.pageIndex).
+// Pages shown in turn: the grid (1) or one per symbol, plus the custom image page if enabled.
+int pageCount(const Config& cfg);
+bool customEnabled(const Config& cfg);
+bool isCustomPage(const Config& cfg, int page);
+// Quote data is needed unless the custom image is the only page.
+bool wantsQuotes(const Config& cfg);
+const char* customModeLabel(uint8_t m);
+void setCustomUrl(const char* url);
+
+// Two steps so the image is decoded with Wi-Fi off: the PNG decoder and 1-bit ditherer
+// need buffers that do not fit while the radio holds its memory.
+// downloadCustomImage(): with Wi-Fi up, fetch the URL to a temporary file on SD.
+// prepareCustomImage(): with Wi-Fi off, validate/convert it and replace the current image.
+bool downloadCustomImage(const Config& cfg);
+bool prepareCustomImage(const Config& cfg);
+bool hasCustomImage();
+
+// Draws page status.pageIndex: the grid, one symbol, or the custom image.
 void drawScreen(GfxRenderer& renderer, const Config& cfg, const ScreenStatus& status);
 
 }  // namespace ticker
