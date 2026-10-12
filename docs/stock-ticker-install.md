@@ -6,7 +6,7 @@ This is CrossPoint 1.6.5 with the [Stock Ticker](stock-ticker.md) app added. Eve
 
 - An Xteink X3
 - A USB-C **data** cable (some cables only charge)
-- The firmware file `crosspoint-1.6.5-ticker.1-x3.bin` from the [Releases page](https://github.com/moshehoori/crosspoint-x3-ticker/releases)
+- The firmware file `crosspoint-1.6.5-ticker.2-x3.bin` from the [Releases page](https://github.com/moshehoori/crosspoint-x3-ticker/releases)
 
 Flashing writes only the firmware. Books, fonts, Wi-Fi networks and settings on the SD card are untouched.
 
@@ -16,7 +16,7 @@ Flashing writes only the firmware. Books, fonts, Wi-Fi networks and settings on 
 
 1. Wake the reader and plug it into your computer.
 2. In Chrome or Edge, open <https://crosspointreader.com/#flash-tools>.
-3. Select **X3**, choose **Custom .bin**, and pick `crosspoint-1.6.5-ticker.1-x3.bin`.
+3. Select **X3**, choose **Custom .bin**, and pick `crosspoint-1.6.5-ticker.2-x3.bin`.
 4. Keep the reader awake until flashing finishes.
 
 ## Option 2: Command line (Linux and macOS)
@@ -30,7 +30,7 @@ pip install esptool
 Then run the helper script from this repo:
 
 ```bash
-tools/stock-ticker/flash_x3.sh crosspoint-1.6.5-ticker.1-x3.bin
+tools/stock-ticker/flash_x3.sh crosspoint-1.6.5-ticker.2-x3.bin
 ```
 
 The script waits for the reader, writes the firmware, and makes it the boot image. Wake the reader (hold the power button) while it's plugged in.
@@ -42,7 +42,7 @@ PORT=/dev/ttyACM0   # macOS: /dev/cu.usbmodem*
 # 1. Reset into the bootloader and stay there
 esptool --chip esp32c3 --port $PORT --before default-reset --after no-reset chip-id
 # 2. Write the firmware to the first app slot
-esptool --chip esp32c3 --port $PORT --before no-reset --after no-reset --baud 460800 write-flash 0x10000 crosspoint-1.6.5-ticker.1-x3.bin
+esptool --chip esp32c3 --port $PORT --before no-reset --after no-reset --baud 460800 write-flash 0x10000 crosspoint-1.6.5-ticker.2-x3.bin
 # 3. Clear the boot selector so the reader boots that slot
 esptool --chip esp32c3 --port $PORT --before no-reset --after no-reset erase-region 0xe000 0x2000
 # 4. Restart

@@ -56,6 +56,27 @@ A status line at the bottom shows when the data was fetched, when the next updat
 | **Market hours only** | On by default. See [Schedule](#schedule). |
 | **Screen orientation** | Portrait, Landscape CCW, or Landscape CW. |
 
+### From a browser
+
+All of these settings, except **Start ticker mode** and **Refresh now**, also appear in CrossPoint's web settings page under a **Stock Ticker** section. Start **File Transfer** on the reader, open the address it shows, go to **Settings**, edit, and save. Symbols use the same comma list, for example `INTC, BTC-USD`.
+
+Scripts can use the same API. These keys go in `POST /api/settings`, and enum values are option indexes:
+
+| Key | Values |
+| --- | --- |
+| `tickerSymbols` | `"INTC, BTC-USD"` |
+| `tickerLayout` | 0 = All on one screen, 1 = Rotate |
+| `tickerRotateMin` | index into Each update, 1, 2, 5, 10 min |
+| `tickerIntervalMin` | index into 5, 10, 15, 30, 60 min |
+| `tickerMarketHoursOnly` | 0 = Off, 1 = On |
+| `tickerOrientation` | 0 = Portrait, 1 = Landscape CCW, 2 = Landscape CW |
+
+```bash
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"tickerSymbols":"INTC, BTC-USD, NVDA","tickerLayout":1}' \
+  http://crosspoint.local/api/settings
+```
+
 **To leave ticker mode, hold the power button** until the reader wakes. It returns to normal, and your usual sleep screen applies again.
 
 ## Schedule
@@ -106,7 +127,7 @@ Quotes come from Yahoo Finance's public chart endpoint (`/v7/finance/spark`), on
 
 ## Updates
 
-The fork's version is `1.6.5-ticker.1`. CrossPoint's built-in **Check for Updates** compares only the first three numbers. It won't offer stock 1.6.5, but it will offer a future official release such as 1.6.6. Installing that replaces this firmware, and the ticker goes away.
+The fork's version is `1.6.5-ticker.2`. CrossPoint's built-in **Check for Updates** compares only the first three numbers. It won't offer stock 1.6.5, but it will offer a future official release such as 1.6.6. Installing that replaces this firmware, and the ticker goes away.
 
 ## Trademarks
 

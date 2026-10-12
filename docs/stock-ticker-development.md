@@ -76,12 +76,12 @@ Development builds (`default` environment) accept serial commands:
 
 ```bash
 cd /tmp/ticker-shots
-~/.platformio/penv/bin/python <repo>/tools/stock-ticker/serial_logger.py 3600 . &   # logs and screenshots
+~/.platformio/penv/bin/python <repo>/tools/stock-ticker/serial_logger.py 3600 . &   # logs and screenshots (no --follow)
 echo "TICKER FETCH" > cmd.req                                                     # refresh quotes
 <repo>/tools/stock-ticker/show.sh 0 0 0 "INTC,BTC-USD" grid-portrait-2.png         # draw and capture
 ```
 
-`serial_logger.py` reconnects whenever the device sleeps and wakes. It writes `serial.log`, sends the command in `cmd.req`, and saves a screenshot when `shot.req` appears. The first connection may reset the reader once; later reconnects do not. The screenshots in [stock-ticker.md](stock-ticker.md) were made this way.
+`serial_logger.py` writes `serial.log`, sends the command in `cmd.req`, and saves a screenshot when `shot.req` appears. **Opening the X3's USB serial port can reset the chip** (`rst:0x15 USB_UART_CHIP_RESET`). So the logger connects once and stops when the port drops. `--follow` reconnects after sleep and restarts, but each reconnect may reset the reader. In our testing that kept rebooting the reader out of File Transfer. Use `--follow` only for watching ticker wakes, and never while testing the web server. The screenshots in [stock-ticker.md](stock-ticker.md) were made this way.
 
 The serial log also shows each ticker wake:
 

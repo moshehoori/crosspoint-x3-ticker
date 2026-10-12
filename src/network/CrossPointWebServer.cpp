@@ -26,6 +26,7 @@
 #include "html/HomePageHtml.generated.h"
 #include "html/SettingsPageHtml.generated.h"
 #include "html/js/jszip_minJs.generated.h"
+#include "ticker/Ticker.h"
 #include "util/BookCacheUtils.h"
 #include "util/TaskWatchdog.h"
 
@@ -1182,8 +1183,8 @@ void CrossPointWebServer::handleGetSettings() const {
   bool seenFirst = false;
   JsonDocument doc;
 
-  for (const auto& s : settings) {
-    if (!s.key) continue;  // Skip ACTION-only entries
+  auto emit = [&](const SettingInfo& s) {
+    if (!s.key) return;  // Skip ACTION-only entries
 
     doc.clear();
     doc["key"] = s.key;
@@ -1237,13 +1238,13 @@ void CrossPointWebServer::handleGetSettings() const {
         break;
       }
       default:
-        continue;
+        return;
     }
 
     const size_t written = serializeJson(doc, output, outputSize);
     if (written >= outputSize) {
       LOG_DBG("WEB", "Skipping oversized setting JSON for: %s", s.key);
-      continue;
+      return;
     }
 
     if (seenFirst) {
@@ -1254,7 +1255,9 @@ void CrossPointWebServer::handleGetSettings() const {
     server->sendContent(output);
     yield();                          // Yield to allow WiFi and other tasks to process during a slow send
     resetTaskWatchdogIfSubscribed();  // Reset watchdog: each sendContent() is a blocking network write
-  }
+  };
+  for (const auto& s : settings) emit(s);
+  for (const auto& s : getTickerSettingsList()) emit(s);
 
   server->sendContent("]");
   server->sendContent("");
@@ -1278,9 +1281,9 @@ void CrossPointWebServer::handlePostSettings() {
   const auto& settings = getSettingsList(&sdFontSystem.registry());
   int applied = 0;
 
-  for (const auto& s : settings) {
-    if (!s.key) continue;
-    if (!doc[s.key].is<JsonVariant>()) continue;
+  auto apply = [&](const SettingInfo& s) -> bool {
+    if (!s.key) return false;
+    if (!doc[s.key].is<JsonVariant>()) return false;
 
     switch (s.type) {
       case SettingType::TOGGLE: {
@@ -1289,7 +1292,7 @@ void CrossPointWebServer::handlePostSettings() {
           SETTINGS.*(s.valuePtr) = val;
         }
         applied++;
-        break;
+        return true;
       }
       case SettingType::ENUM: {
         const int val = doc[s.key].as<int>();
@@ -1302,6 +1305,7 @@ void CrossPointWebServer::handlePostSettings() {
             s.valueSetter(static_cast<uint8_t>(val));
           }
           applied++;
+          return true;
         }
         break;
       }
@@ -1312,6 +1316,7 @@ void CrossPointWebServer::handlePostSettings() {
             SETTINGS.*(s.valuePtr) = static_cast<uint8_t>(val);
           }
           applied++;
+          return true;
         }
         break;
       }
@@ -1325,14 +1330,19 @@ void CrossPointWebServer::handlePostSettings() {
           ptr[s.stringMaxLen - 1] = '\0';
         }
         applied++;
-        break;
+        return true;
       }
       default:
         break;
     }
-  }
+    return false;
+  };
+  for (const auto& s : settings) apply(s);
+  bool tickerChanged = false;
+  for (const auto& s : getTickerSettingsList()) tickerChanged |= apply(s);
 
   SETTINGS.saveToFile();
+  if (tickerChanged) ticker::saveConfig();  // Stock Ticker rows live in their own file
 
   LOG_DBG("WEB", "Applied %d setting(s)", applied);
   server->send(200, "text/plain", String("Applied ") + String(applied) + " setting(s)");

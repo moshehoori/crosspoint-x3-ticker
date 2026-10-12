@@ -18,6 +18,7 @@
 #include "ReaderFontSizes.h"
 #include "activities/settings/SettingsActivity.h"
 #include "components/UITheme.h"
+#include "ticker/Ticker.h"
 #include "util/DictionaryRegistry.h"
 
 // Build the font family setting dynamically. When registry is non-null, SD card fonts
@@ -204,6 +205,73 @@ inline std::vector<StrId> homeThemeValues() {
 // the font-family entry is replaced in that copy with a registry-aware version.
 // The font-size entry is always rebuilt, since its options are point sizes read
 // from the active family rather than a fixed enum.
+// Stock Ticker settings for the web settings page only. They live in /.crosspoint/ticker.json,
+// not CrossPointSettings, so they are a separate small list: appending them to
+// getSettingsList() would reallocate that exactly-sized vector (an abort() on the
+// fragmented File Transfer heap) and leak them into CrossPointSettings::toJson().
+inline std::vector<SettingInfo> getTickerSettingsList() {
+  using namespace ticker;
+  std::vector<SettingInfo> v;
+  v.reserve(6);
+  auto minuteLabels = [](const uint8_t* steps, int count, bool zeroIsEachUpdate) {
+    std::vector<std::string> labels;
+    labels.reserve(count);
+    char buf[24];
+    for (int i = 0; i < count; i++) {
+      if (zeroIsEachUpdate && steps[i] == 0) {
+        labels.emplace_back(tr(STR_TICKER_EACH_UPDATE));
+        continue;
+      }
+      snprintf(buf, sizeof(buf), tr(STR_TICKER_MINUTES), steps[i]);
+      labels.emplace_back(buf);
+    }
+    return labels;
+  };
+  auto indexOf = [](const uint8_t* steps, int count, uint8_t value) -> uint8_t {
+    for (int i = 0; i < count; i++) {
+      if (steps[i] == value) return static_cast<uint8_t>(i);
+    }
+    return 0;
+  };
+
+  v.push_back(SettingInfo::DynamicString(
+      StrId::STR_TICKER_SYMBOLS,
+      [] {
+        char buf[MAX_SYMBOLS * (SYMBOL_LEN + 2)];
+        formatSymbols(buf, sizeof(buf), config());
+        return std::string(buf);
+      },
+      [](const std::string& val) { setSymbols(val.c_str()); }, "tickerSymbols", StrId::STR_TICKER));
+
+  v.push_back(SettingInfo::DynamicEnum(
+      StrId::STR_TICKER_LAYOUT, {StrId::STR_TICKER_LAYOUT_GRID, StrId::STR_TICKER_LAYOUT_ROTATE},
+      [] { return config().layout; }, [](uint8_t val) { config().layout = val; }, "tickerLayout", StrId::STR_TICKER));
+
+  SettingInfo rotate = SettingInfo::DynamicEnum(
+      StrId::STR_TICKER_ROTATE_EVERY, {},
+      [indexOf] { return indexOf(ROTATE_STEPS, ROTATE_STEP_COUNT, config().rotateMin); },
+      [](uint8_t i) { config().rotateMin = ROTATE_STEPS[i]; }, "tickerRotateMin", StrId::STR_TICKER);
+  rotate.enumStringValues = minuteLabels(ROTATE_STEPS, ROTATE_STEP_COUNT, true);
+  v.push_back(std::move(rotate));
+
+  SettingInfo interval = SettingInfo::DynamicEnum(
+      StrId::STR_TICKER_INTERVAL, {}, [indexOf] { return indexOf(INTERVALS, INTERVAL_COUNT, config().intervalMin); },
+      [](uint8_t i) { config().intervalMin = INTERVALS[i]; }, "tickerIntervalMin", StrId::STR_TICKER);
+  interval.enumStringValues = minuteLabels(INTERVALS, INTERVAL_COUNT, false);
+  v.push_back(std::move(interval));
+
+  v.push_back(SettingInfo::DynamicEnum(
+      StrId::STR_TICKER_MARKET_HOURS, {StrId::STR_STATE_OFF, StrId::STR_STATE_ON},
+      [] { return static_cast<uint8_t>(config().marketHoursOnly ? 1 : 0); },
+      [](uint8_t val) { config().marketHoursOnly = val != 0; }, "tickerMarketHoursOnly", StrId::STR_TICKER));
+
+  v.push_back(SettingInfo::DynamicEnum(
+      StrId::STR_TICKER_SCREEN, {StrId::STR_PORTRAIT, StrId::STR_LANDSCAPE_CCW, StrId::STR_LANDSCAPE_CW},
+      [] { return config().orientation; }, [](uint8_t val) { config().orientation = val; }, "tickerOrientation",
+      StrId::STR_TICKER));
+  return v;
+}
+
 inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* registry = nullptr,
                                                 const std::vector<DictionaryEntry>* dictionaries = nullptr) {
   static const std::vector<SettingInfo> baseList = [] {

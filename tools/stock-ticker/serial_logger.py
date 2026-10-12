@@ -1,10 +1,19 @@
 #!/usr/bin/env python3
 """Logs CrossPoint serial output (reconnecting across deep-sleep USB drops) and grabs screenshots on request.
 
-Usage: serial_logger.py [seconds] [output_dir]   (default 1800 s, current directory)
+Usage: serial_logger.py [seconds] [output_dir] [--follow]   (default 1800 s, current directory)
 Requires pyserial (PlatformIO's penv has it: ~/.platformio/penv/bin/python).
+
+WARNING: on the ESP32-C3 USB serial port, opening the port can reset the chip
+(rst:0x15 USB_UART_CHIP_RESET). By default the logger therefore connects once and
+exits when the port drops. --follow reconnects after deep-sleep wakes and restarts,
+but each reconnect may reset the reader: don't use it while testing File Transfer
+or anything else that restarts the device.
 Touch <dir>/shot.req to capture the framebuffer to shot_<n>.bin; write a command to <dir>/cmd.req to send CMD:<command>."""
 import glob, os, sys, time, serial
+
+FOLLOW = "--follow" in sys.argv
+sys.argv = [a for a in sys.argv if a != "--follow"]
 
 D = os.path.abspath(sys.argv[2] if len(sys.argv) > 2 else ".")
 LOG = open(os.path.join(D, "serial.log"), "a", buffering=1)
@@ -64,4 +73,6 @@ while time.time() < END:
                 log(l.decode("utf-8", "replace").rstrip())
     except Exception as e:  # port vanished (deep sleep) or reset
         log(f"== port closed: {e.__class__.__name__} ==")
+        if not FOLLOW:
+            break  # reopening could reset the reader; see the module docstring
         time.sleep(0.5)
