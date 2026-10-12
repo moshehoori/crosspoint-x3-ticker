@@ -16,7 +16,9 @@ This is a fork of [CrossPoint Reader](https://github.com/crosspoint-reader/cross
 | --- | --- |
 | [Stock Ticker user guide](docs/stock-ticker.md) | Settings, layouts, schedule, battery, troubleshooting |
 | [Installation guide](docs/stock-ticker-install.md) | Flashing the X3, and fixes for the common USB problems |
-| [Developer guide](docs/stock-ticker-development.md) | Architecture, building, testing layouts over serial |
+| [Webhook format](docs/webhook-format.md) | Every webhook field, layout rules, and examples |
+| [Webhook AI prompt](docs/webhook-ai-prompt.md) | Paste into an AI assistant to have it write webhooks or integrations |
+| [Developer guide](docs/stock-ticker-development.md) | Architecture, building, unit tests, testing layouts over serial |
 
 **Download:** the latest `crosspoint-*-ticker*-x3.bin` from [Releases](https://github.com/moshehoori/crosspoint-x3-ticker/releases).
 

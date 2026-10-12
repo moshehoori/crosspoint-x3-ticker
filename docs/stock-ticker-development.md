@@ -28,6 +28,9 @@ flowchart TD
 | `src/ticker/Ticker.h/.cpp` | Config (`/.crosspoint/ticker.json`), quote cache (`ticker_cache.json`), Wi-Fi join, Yahoo fetch and parse, New York market schedule, wake bookkeeping kept in RTC memory |
 | `src/ticker/TickerCustom.cpp` | Custom image: download to SD with Wi-Fi up, then validate or convert (PNG to 1-bit BMP) with Wi-Fi off, and swap in only a known-good image |
 | `tools/stock-ticker/webhook_server.py` | Webhook receiver that renders the latest payload (text, items, image, chart) to a 1-bit PNG |
+| `src/ticker/TickerLogic.h/.cpp` | Pure logic with no Arduino, storage or network calls: New York calendar and DST, refresh schedule, symbol parsing, page logic, Yahoo spark parsing. Shared by the firmware and the host tests |
+| `test/ticker_logic/` | Google Test suite for `TickerLogic`, including a real Yahoo response in `fixtures/` |
+| `tools/stock-ticker/test_webhook_server.py` | Unit tests for the webhook server |
 | `src/ticker/TickerScreen.cpp` | Rendering: grid cards, single-symbol page, seven-segment price digits, charts, status line, logos |
 | `src/activities/settings/TickerActivity.*` | The settings menu and the full-screen preview |
 | `src/main.cpp` | `runTickerCycle()`, the timer-wake branch in `setup()`, `enterTickerSleep()`, and the serial debug commands |
@@ -64,6 +67,33 @@ The output is `.pio/build/<env>/firmware.bin`, an app image for offset `0x10000`
   ```bash
   pio pkg install -g -t "platformio/tool-scons@~4.41101.0"
   ```
+
+## Unit tests
+
+**Firmware logic** uses Google Test, like CrossPoint's other host tests:
+
+```bash
+cmake -S test -B build/test
+cmake --build build/test --target TickerLogicTest
+build/test/ticker_logic/TickerLogicTest
+```
+
+`pio run -t unit-tests` builds and runs every suite, including this one. The 23 tests cover:
+
+- **Calendar and New York time:** days-since-epoch, US daylight-saving dates, and the offset switching exactly at 02:00 local time
+- **Market hours:** open and closed times, the one-minute early-wake tolerance, weekends, winter time, and an unknown clock
+- **Refresh schedule:** in-market interval, landing on the 16:05 after-close refresh, sleeping to the next open across weekends, hourly crypto off-hours, market-hours-off, and image-only mode
+- **Symbols:** cleaning, uppercasing, length limit, separators, duplicates, the 4-symbol cap, and junk input
+- **Pages:** grid, rotate, and the custom image as the only page or an extra last page
+- **Yahoo parsing** against a saved real response: stock fields, crypto detection, volumes above 32 bits, thinning 84 points to at most 48 while keeping the latest, skipped nulls, and rejected entries
+
+**Webhook server** uses Python's `unittest` and Pillow, with no network access needed:
+
+```bash
+python3 -m unittest -v tools/stock-ticker/test_webhook_server.py
+```
+
+The 32 tests cover body parsing, size parameters, every `items` form, chart filtering, layout in both orientations, clipping and overflow, hostile payloads, image decoding and transparency, re-fetching a changed image at the same URL, and the HTTP responses (PNG, BMP, status, 400, 404, 413).
 
 ## Testing layouts on the device (no button presses)
 

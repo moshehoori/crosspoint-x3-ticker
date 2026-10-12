@@ -109,14 +109,7 @@ curl -X POST -H "Content-Type: application/json" http://<that-computer>:8080/web
 }'
 ```
 
-| Field | Shown as |
-| --- | --- |
-| `title` | Large heading |
-| `text` | Wrapped paragraph |
-| `items` | Label and value rows |
-| `image` | A picture, given as an http(s) URL or base64 (`data:image/png;base64,...`), dithered into black-and-white dots |
-| `chart` + `chart_title` | Line chart with low, high and latest values |
-| any other key | An extra label and value row |
+The main fields are `title`, `text`, `items` (label and value rows), `image` (a picture as a URL or base64), `chart` (a list of numbers) with `chart_title`, and `footer`. **[Webhook format](webhook-format.md)** has every field, the accepted forms, layout rules, limits, and ready-made examples for Home Assistant and GitHub Actions. To have an AI assistant write webhooks or integrations for you, paste **[the AI prompt](webhook-ai-prompt.md)** into it.
 
 | Text, picture and chart | Picture from a URL and chart |
 | --- | --- |
