@@ -1,3 +1,27 @@
+# CrossPoint Reader: X3 Stock Ticker edition
+
+This is a fork of [CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader) 1.6.5 for the **Xteink X3**. It adds a low-power **stock and crypto ticker** app. Everything else is stock CrossPoint; the original README follows below.
+
+![Stock Ticker on the X3: Intel and Bitcoin in the portrait grid, and Bitcoin in the landscape layout](docs/images/stock-ticker/overview.png)
+
+- **Up to 4 symbols**, such as `INTC`, `BTC-USD` and `NVDA`, with price, change today, an intraday chart, day range and volume
+- **Two layouts:** all on one screen, or rotating one full screen per symbol, in portrait or landscape
+- **Low power:** the reader deep-sleeps between updates while e-ink holds the image, wakes on a timer, refreshes over your saved Wi-Fi in a few seconds, and sleeps again
+- **Market-hours aware:** stocks update only while the New York market is open, and crypto keeps updating hourly overnight
+- **Intel and Bitcoin logos**, plus a small *Hello Clock* demo app
+
+| Guide | For |
+| --- | --- |
+| [Stock Ticker user guide](docs/stock-ticker.md) | Settings, layouts, schedule, battery, troubleshooting |
+| [Installation guide](docs/stock-ticker-install.md) | Flashing the X3, and fixes for the common USB problems |
+| [Developer guide](docs/stock-ticker-development.md) | Architecture, building, testing layouts over serial |
+
+**Download:** the latest `crosspoint-*-ticker*-x3.bin` from [Releases](https://github.com/moshehoori/crosspoint-x3-ticker/releases).
+
+> The ticker's timer wake works on the **X3 only**. The X4 cuts battery power when it sleeps, so it can't wake itself. Quotes come from Yahoo Finance's unofficial public endpoint and may be delayed. Not affiliated with Intel, Yahoo, Xteink, or the CrossPoint project.
+
+---
+
 # CrossPoint Reader
 
 [![Fund contributors](https://img.shields.io/badge/%F0%9F%91%91_Fund_contributors-royalty.dev-BB953A?style=for-the-badge&labelColor=1a1a1a)](https://app.royalty.dev/crosspoint-reader/crosspoint-reader)

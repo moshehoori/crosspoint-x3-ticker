@@ -29,6 +29,8 @@ enum class SettingAction {
   KeyboardLayouts,
   HomeButton,
   About,
+  HelloClock,
+  Ticker,
 };
 
 struct SettingInfo {

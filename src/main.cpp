@@ -36,6 +36,7 @@
 #include "components/UITheme.h"
 #include "fontIds.h"
 #include "platform/UsbSerialJtagHandoff.h"
+#include "ticker/Ticker.h"
 #include "util/ButtonNavigator.h"
 #include "util/ScreenshotUtil.h"
 #include "util/Timezones.h"
@@ -300,7 +301,7 @@ void enterDeepSleep(bool fromTimeout = false) {
   powerManager.startDeepSleep(gpio);
 }
 
-void setupDisplayAndFonts(bool seamless = false) {
+void setupDisplayAndFonts(bool seamless = false, bool loadSdFonts = true) {
 #if !FREEINK_MCU_C3
   // C3 resolves its controller in HalGPIO::begin() before SPI claims the
   // display pins. X4 Pro skips that C3-only path, so probe here before
@@ -341,9 +342,120 @@ void setupDisplayAndFonts(bool seamless = false) {
   renderer.insertFont(SMALL_FONT_ID, smallFontFamily);
 
   // Discover and load SD card fonts
-  sdFontSystem.begin(renderer);
+  if (loadSdFonts) sdFontSystem.begin(renderer);
 
   LOG_DBG("MAIN", "Fonts setup");
+}
+
+// ---------------------------------------------------------------------------
+// Stock ticker low-power cycle (X3 only): draw, deep sleep on a timer, wake,
+// join Wi-Fi, fetch, redraw, sleep again. The power button exits it.
+
+static bool tickerSleepPending = false;
+static bool tickerDisplayReady = false;
+
+void requestTickerSleep() { tickerSleepPending = true; }
+
+[[noreturn]] static void tickerDeepSleep(const uint32_t seconds) {
+  ticker::wifiOff();
+  halTiltSensor.deepSleep();
+  if (tickerDisplayReady) display.deepSleep();
+  Storage.prepareForDeepSleep();
+  LOG_INF("TICK", "Sleeping %lu s", static_cast<unsigned long>(seconds));
+  powerManager.startDeepSleep(gpio, seconds);
+  for (;;) delay(1000);  // startDeepSleep does not return
+}
+
+static void tickerDraw(const ticker::ScreenStatus& status, const bool fullRefresh) {
+  if (!tickerDisplayReady) {
+    setupDisplayAndFonts(true, false);
+    tickerDisplayReady = true;
+  }
+  RenderLock lock;
+  ticker::drawScreen(renderer, ticker::config(), status);
+  renderer.displayBuffer(fullRefresh ? HalDisplay::FULL_REFRESH : HalDisplay::HALF_REFRESH);
+}
+
+// One wake of the ticker: fetch when due (all symbols, one request), otherwise
+// just advance the rotation on cached quotes; draw; sleep until the next
+// fetch or rotation, whichever is first. fromTimer: woken by the RTC timer
+// with no UI running; otherwise entered from the app's "Start" row.
+[[noreturn]] static void runTickerCycle(const bool fromTimer) {
+  const unsigned long startMs = millis();
+  auto& cfg = ticker::config();
+  time_t now = ticker::nowUtc();
+
+  if (fromTimer) {
+    if (!cfg.active || !gpio.deviceIsX3()) tickerDeepSleep(0);
+    // Woke before the target (capped long sleep or RC clock drift): sleep the rest.
+    const int64_t early = ticker::secondsUntilTarget(now);
+    if (early > 90) tickerDeepSleep(ticker::capSleep(static_cast<uint32_t>(early)));
+  }
+
+  const int battery = powerManager.getBatteryPercentage();
+  ticker::loadCache();
+  ticker::ScreenStatus status;
+  status.battery = battery;
+
+  if (!gpio.isUsbConnected() && battery > 0 && battery < 8) {
+    cfg.active = false;
+    ticker::saveConfig();
+    status.banner = tr(STR_TICKER_PAUSED_BATTERY);
+    tickerDraw(status, false);
+    tickerDeepSleep(0);
+  }
+
+  const bool doFetch = !fromTimer || ticker::fetchDue(now);
+  bool ok = true;
+  if (doFetch) {
+    ok = false;
+    if (ticker::connectWifi(12000)) {
+      if (ticker::ntpDue(now) && halClock.syncFromNTP()) {
+        now = ticker::nowUtc();
+        ticker::markNtpSynced(now);
+      }
+      ok = ticker::fetchQuotes(cfg, now);
+      if (ok) ticker::saveCache();
+    }
+    ticker::wifiOff();
+    const uint32_t retry = ticker::noteFetchResult(ok);
+    const bool hasCrypto = ticker::anyCrypto(cfg);
+    ticker::setNextFetch(now > 0 ? now + (retry > 0 ? retry : ticker::nextRefreshSeconds(cfg, now, hasCrypto)) : 0);
+  }
+
+  const bool rotating = cfg.layout == ticker::LAYOUT_ROTATE && cfg.symbolCount > 1;
+  if (rotating && fromTimer) ticker::advanceRotation(cfg.symbolCount);
+
+  // Next wake: the next fetch, or sooner for a rotation step while rotation is active.
+  const time_t nextFetch = ticker::nextFetchAt();
+  // Unknown clock (no RTC time and NTP failed): fall back to the plain interval rather than spinning.
+  uint32_t untilWake = now == 0 ? static_cast<uint32_t>(cfg.intervalMin) * 60u
+                                : (nextFetch > now ? static_cast<uint32_t>(nextFetch - now) : 60u);
+  if (rotating && cfg.rotateMin > 0 && ticker::rotationActive(cfg, now, ticker::anyCrypto(cfg))) {
+    const uint32_t step = static_cast<uint32_t>(cfg.rotateMin) * 60u;
+    if (step < untilWake) untilWake = step;
+  }
+  if (now > 0) ticker::setWakeTarget(now + untilWake);
+
+  status.offline = doFetch && !ok;
+  status.nextUpdate = nextFetch;
+  status.pageIndex = ticker::rotationIndex();
+  tickerDraw(status, ticker::wantFullRefresh());
+  ticker::appendLog(now, battery, doFetch, ok, millis() - startMs);
+  tickerDeepSleep(ticker::capSleep(untilWake));
+}
+
+// Called from loop() after the app's "Start ticker mode" row.
+[[noreturn]] static void enterTickerSleep() {
+  HalPowerManager::Lock powerLock;
+  APP_STATE.lastSleepFromReader = false;
+  APP_STATE.showBootScreen = false;
+  APP_STATE.saveToFile();
+  deepSleepInProgress = true;  // suppresses the Wi-Fi activities' silent restart in onExit()
+  activityManager.goToFullScreenMessage(tr(STR_UPDATING), EpdFontFamily::BOLD);
+  activityManager.loop();
+  tickerDisplayReady = true;
+  runTickerCycle(false);
 }
 
 void setup() {
@@ -444,6 +556,16 @@ void setup() {
   // light off unless Restore Light on Wake is enabled; silent maintenance
   // reboots replay the live state captured at restart, so they neither go dark
   // nor light up against the user's wake preference.
+  ticker::loadConfig();
+  if (wakeupReason == HalGPIO::WakeupReason::Timer) {
+    runTickerCycle(true);
+  }
+  if (ticker::config().active) {
+    // Any non-timer boot (power button, flash, USB) leaves ticker mode.
+    ticker::config().active = false;
+    ticker::saveConfig();
+  }
+
   const bool restoreLightOn =
       isSilentReboot ? silentRebootLightOn : (SETTINGS.frontlightOn != 0 && SETTINGS.frontlightRestoreOnWake != 0);
   Frontlight.begin(SETTINGS.frontlightBrightness, SETTINGS.frontlightWarmth, restoreLightOn);
@@ -589,6 +711,11 @@ void loop() {
   gpio.setSharedConfirmPowerShortPressEmitsPower(SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP);
   mappedInputManager.update();
 
+  if (tickerSleepPending) {
+    tickerSleepPending = false;
+    enterTickerSleep();
+  }
+
   if (activityManager.requiresExclusiveStorageLoop()) {
     // USB Drive handed the raw SD card to the host. Do not run screenshots,
     // sleep, shortcuts, or normal navigation while its filesystem is detached.
@@ -636,6 +763,42 @@ void loop() {
         logSerial.write(buf, bufferSize);
         logSerial.printf("SCREENSHOT_END\n");
       }
+#ifdef ENABLE_SERIAL_LOG
+      // Debug: "TICKER FETCH" refreshes the quote cache; "TICKER SHOW <layout> <orientation> <page> <symbols>"
+      // draws the ticker screen from cached quotes without touching the saved config.
+      else if (cmd == "TICKER FETCH") {
+        ticker::loadConfig();
+        ticker::loadCache();
+        const bool ok = ticker::connectWifi(12000) && ticker::fetchQuotes(ticker::config(), ticker::nowUtc());
+        if (ok) ticker::saveCache();
+        ticker::wifiOff();
+        logSerial.printf("TICKER_FETCH:%d\n", ok ? 1 : 0);
+      } else if (cmd.startsWith("TICKER SHOW ")) {
+        int layout = 0, orient = 0, page = 0;
+        char syms[64] = "";
+        sscanf(cmd.c_str() + 12, "%d %d %d %63[^\n]", &layout, &orient, &page, syms);
+        ticker::loadConfig();
+        if (syms[0]) ticker::setSymbols(syms);
+        ticker::loadCache();
+        auto& cfg = ticker::config();
+        cfg.layout = static_cast<uint8_t>(layout);
+        cfg.orientation = static_cast<uint8_t>(orient);
+        ticker::ScreenStatus status;
+        status.battery = powerManager.getBatteryPercentage();
+        status.pageIndex = page;
+        status.nextUpdate = ticker::nowUtc() + 900;  // show the full ticker-mode status lines
+        {
+          RenderLock lock;
+          const auto saved = renderer.getOrientation();
+          ticker::drawScreen(renderer, cfg, status);
+          renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+          renderer.setOrientation(saved);
+        }
+        ticker::loadConfig();  // drop the temporary overrides
+        ticker::loadCache();
+        logSerial.printf("TICKER_SHOWN\n");
+      }
+#endif
     }
   }
 
