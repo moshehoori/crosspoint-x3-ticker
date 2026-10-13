@@ -82,7 +82,7 @@ TEST(TickerSchedule, LastIntervalLandsOnTheAfterCloseRefresh) {
 
 TEST(TickerSchedule, StocksSleepToTheNextOpen) {
   EXPECT_EQ(nextRefreshSeconds(stocksOnly(), utc(2026, 10, MON, 20, 5), false), (17 * 60 + 25) * 60u);  // Tue 09:30
-  EXPECT_EQ(nextRefreshSeconds(stocksOnly(), utc(2026, 10, MON, 12, 0), false), 90u * 60);  // same-day open
+  EXPECT_EQ(nextRefreshSeconds(stocksOnly(), utc(2026, 10, MON, 12, 0), false), 90u * 60);              // same-day open
   EXPECT_EQ(nextRefreshSeconds(stocksOnly(), utc(2026, 10, 16, 20, 5), false),
             ((2 * 24 + 17) * 60 + 25) * 60u);  // Friday after close -> Monday 09:30
   EXPECT_EQ(nextRefreshSeconds(stocksOnly(), utc(2026, 10, 17, 16, 0), false),
@@ -106,6 +106,20 @@ TEST(TickerSchedule, ImageOnlyIgnoresMarketHours) {
   c.customMode = CUSTOM_ONLY;
   strcpy(c.customUrl, "http://example.com/a.png");
   EXPECT_EQ(nextRefreshSeconds(c, utc(2026, 10, 17, 16, 0), false), 10u * 60);  // Saturday
+}
+
+TEST(TickerSchedule, LongIntervals) {
+  static_assert(INTERVALS[INTERVAL_COUNT - 1] == 240, "4 h is the longest interval");
+  // 10:00 NY + 4 h = 14:00, still before the close.
+  EXPECT_EQ(nextRefreshSeconds(stocksOnly(240), utc(2026, 10, MON, 14, 0), false), 240u * 60);
+  // 13:00 NY + 4 h would pass the close: land on the 16:05 refresh instead.
+  EXPECT_EQ(nextRefreshSeconds(stocksOnly(240), utc(2026, 10, MON, 17, 0), false), (3 * 60 + 5) * 60u);
+  // Crypto off-hours: the 4 h interval is longer than the hourly default, so it wins...
+  EXPECT_EQ(nextRefreshSeconds(stocksOnly(240), utc(2026, 10, MON, 20, 5), true), 240u * 60);
+  // ...but never skips the next open (Tue 07:00 NY -> 09:30).
+  EXPECT_EQ(nextRefreshSeconds(stocksOnly(240), utc(2026, 10, 13, 11, 0), true), 150u * 60);
+  EXPECT_EQ(nextRefreshSeconds(stocksOnly(180, false), utc(2026, 10, 17, 16, 0), false), 180u * 60);
+  EXPECT_EQ(nextRefreshSeconds(stocksOnly(120, false), 0, false), 120u * 60);
 }
 
 TEST(TickerSchedule, RotationPausesOffHours) {

@@ -222,7 +222,7 @@ inline std::vector<SettingInfo> getTickerSettingsList() {
         labels.emplace_back(tr(STR_TICKER_EACH_UPDATE));
         continue;
       }
-      snprintf(buf, sizeof(buf), tr(STR_TICKER_MINUTES), steps[i]);
+      formatInterval(buf, sizeof(buf), steps[i]);
       labels.emplace_back(buf);
     }
     return labels;

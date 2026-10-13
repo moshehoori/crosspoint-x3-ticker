@@ -131,6 +131,14 @@ bool saveConfig() {
   return PersistableStoreBase::writeDocToFile(CONFIG_PATH, doc);
 }
 
+void formatInterval(char* buf, size_t n, uint8_t minutes) {
+  if (minutes >= 120 && minutes % 60 == 0) {
+    snprintf(buf, n, tr(STR_TICKER_HOURS), minutes / 60);
+  } else {
+    snprintf(buf, n, tr(STR_TICKER_MINUTES), minutes);
+  }
+}
+
 const char* orientationLabel(uint8_t o) {
   switch (o) {
     case LANDSCAPE_LEFT:

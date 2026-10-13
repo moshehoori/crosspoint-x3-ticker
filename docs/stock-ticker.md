@@ -52,7 +52,7 @@ A status line at the bottom shows when the data was fetched, when the next updat
 | **Symbols** | A comma list of up to 4 [Yahoo Finance](https://finance.yahoo.com) symbols, for example `INTC, BTC-USD, NVDA`. Crypto uses pairs like `BTC-USD` or `ETH-USD`. |
 | **Layout** | *All on one screen* or *Rotate*. |
 | **Rotate every** | *Each update*, or every 1, 2, 5 or 10 minutes. Rotation steps redraw from saved data without Wi-Fi. |
-| **Refresh interval** | 5, 10, 15 (default), 30 or 60 minutes. |
+| **Refresh interval** | 5, 10, 15 (default), 30 or 60 minutes, or 2, 3 or 4 hours. |
 | **Market hours only** | On by default. See [Schedule](#schedule). |
 | **Screen orientation** | Portrait, Landscape CCW, or Landscape CW. |
 | **Custom image** | *Off*, *Only the image*, or *Extra page* (shown in turn with your stocks). See [Custom images and webhooks](#custom-images-and-webhooks). |
@@ -69,7 +69,7 @@ Scripts can use the same API. These keys go in `POST /api/settings`, and enum va
 | `tickerSymbols` | `"INTC, BTC-USD"` |
 | `tickerLayout` | 0 = All on one screen, 1 = Rotate |
 | `tickerRotateMin` | index into Each update, 1, 2, 5, 10 min |
-| `tickerIntervalMin` | index into 5, 10, 15, 30, 60 min |
+| `tickerIntervalMin` | index into 5, 10, 15, 30, 60 min, 2, 3, 4 h |
 | `tickerMarketHoursOnly` | 0 = Off, 1 = On |
 | `tickerOrientation` | 0 = Portrait, 1 = Landscape CCW, 2 = Landscape CW |
 | `tickerCustomMode` | 0 = Off, 1 = Only the image, 2 = Extra page |

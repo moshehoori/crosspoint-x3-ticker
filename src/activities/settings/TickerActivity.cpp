@@ -198,7 +198,7 @@ void TickerActivity::buildScreen(UiScreen& screen) {
     snprintf(buf, sizeof(buf), tr(STR_TICKER_MINUTES), cfg.rotateMin);
     rowValues_[ROW_ROTATE] = buf;
   }
-  snprintf(buf, sizeof(buf), tr(STR_TICKER_MINUTES), cfg.intervalMin);
+  ticker::formatInterval(buf, sizeof(buf), cfg.intervalMin);
   rowValues_[ROW_INTERVAL] = buf;
   rowValues_[ROW_MARKET_HOURS] = cfg.marketHoursOnly ? tr(STR_STATE_ON) : tr(STR_STATE_OFF);
   rowValues_[ROW_ORIENTATION] = ticker::orientationLabel(cfg.orientation);

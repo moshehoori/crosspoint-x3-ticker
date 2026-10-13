@@ -15,7 +15,7 @@ namespace ticker {
 constexpr int MAX_SYMBOLS = 4;
 constexpr int SYMBOL_LEN = 12;
 constexpr int MAX_POINTS = 48;  // intraday points kept per symbol (24h crypto is downsampled)
-constexpr uint8_t INTERVALS[] = {5, 10, 15, 30, 60};
+constexpr uint8_t INTERVALS[] = {5, 10, 15, 30, 60, 120, 180, 240};  // minutes; uint8_t caps this at 255
 constexpr int INTERVAL_COUNT = sizeof(INTERVALS) / sizeof(INTERVALS[0]);
 constexpr uint8_t ROTATE_STEPS[] = {0, 1, 2, 5, 10};  // minutes; 0 = advance once per update
 constexpr int ROTATE_STEP_COUNT = sizeof(ROTATE_STEPS) / sizeof(ROTATE_STEPS[0]);
@@ -71,6 +71,8 @@ bool saveConfig();
 void setSymbols(const char* commaList);
 void formatSymbols(char* buf, size_t n, const Config& cfg);
 const char* orientationLabel(uint8_t o);
+// "15 min", or "2 h" from 120 minutes up.
+void formatInterval(char* buf, size_t n, uint8_t minutes);
 const char* layoutLabel(uint8_t l);
 // Crypto per the cached quote type, or a "-" pair (BTC-USD) before the first fetch.
 bool isCrypto(const char* symbol);
