@@ -41,7 +41,10 @@ class HalPowerManager {
   // Setup wake up GPIO and enter deep sleep
   // Should be called inside main loop() to handle the currentLockMode
   // timerWakeSeconds > 0 also arms a timer wake; the power button stays armed either way.
-  void startDeepSleep(HalGPIO& gpio, uint32_t timerWakeSeconds = 0) const;
+  // keepPowerOn holds the Xteink C3 GPIO13 power switch ON through sleep instead of OFF:
+  // on boards where that switch gates the battery, OFF would power the chip down and the
+  // timer could never fire (the SD card then stays powered, a small sleep-current cost).
+  void startDeepSleep(HalGPIO& gpio, uint32_t timerWakeSeconds = 0, bool keepPowerOn = false) const;
 
   // Get battery percentage (range 0-100)
   uint16_t getBatteryPercentage() const;

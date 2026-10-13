@@ -45,6 +45,9 @@ RTC_DATA_ATTR bool rtcHaveBssid = false;
 RTC_DATA_ATTR uint8_t rtcBssid[6] = {};
 RTC_DATA_ATTR int32_t rtcChannel = 0;
 RTC_DATA_ATTR char rtcBssidSsid[33] = "";
+RTC_DATA_ATTR uint32_t rtcActiveMagic = 0;  // == ACTIVE_MAGIC while ticker mode runs
+RTC_DATA_ATTR Config rtcConfig;
+constexpr uint32_t ACTIVE_MAGIC = 0x5449434B;  // 'TICK'
 
 Config gConfig;
 Quote gQuotes[MAX_SYMBOLS];  // static: ~350 bytes each, far over the stack budget
@@ -435,7 +438,23 @@ bool wantFullRefresh() { return (rtcRefreshCount++ % FULL_REFRESH_EVERY) == 0; }
 
 uint32_t capSleep(uint32_t seconds) { return seconds > MAX_SLEEP_S ? MAX_SLEEP_S : seconds; }
 
-void appendLog(time_t now, int battery, bool fetched, bool ok, uint32_t awakeMs) {
+void rememberActive(const Config& cfg) {
+  rtcConfig = cfg;
+  rtcConfig.active = true;
+  rtcActiveMagic = ACTIVE_MAGIC;
+}
+
+bool activeInRtc() { return rtcActiveMagic == ACTIVE_MAGIC; }
+
+bool restoreFromRtc() {
+  if (!activeInRtc()) return false;
+  gConfig = rtcConfig;
+  return true;
+}
+
+void forgetActive() { rtcActiveMagic = 0; }
+
+void appendLog(time_t now, int battery, bool fetched, bool ok, uint32_t awakeMs, const char* event) {
   bool tooBig = false;
   {
     HalFile existing;
@@ -450,9 +469,9 @@ void appendLog(time_t now, int battery, bool fetched, bool ok, uint32_t awakeMs)
     LOG_ERR("TICK", "Cannot open %s", LOG_PATH);
     return;
   }
-  char line[64];
-  const int len = snprintf(line, sizeof(line), "%lld,%d,%d,%d,%lu\n", static_cast<long long>(now), battery,
-                           fetched ? 1 : 0, ok ? 1 : 0, static_cast<unsigned long>(awakeMs));
+  char line[80];
+  const int len = snprintf(line, sizeof(line), "%lld,%d,%d,%d,%lu,%s\n", static_cast<long long>(now), battery,
+                           fetched ? 1 : 0, ok ? 1 : 0, static_cast<unsigned long>(awakeMs), event ? event : "");
   if (len > 0) file.write(line, static_cast<size_t>(len));
 }
 

@@ -20,6 +20,7 @@
 #include <WiFi.h>
 #include <XteinkDetect.h>
 #include <builtinFonts/all.h>
+#include <esp_timer.h>
 
 #include <cstring>
 
@@ -354,15 +355,51 @@ void setupDisplayAndFonts(bool seamless = false, bool loadSdFonts = true) {
 static bool tickerSleepPending = false;
 static bool tickerDisplayReady = false;
 
+// A wake that hangs (e.g. inside a network call) is restarted by this guard; the
+// restart resumes the ticker instead of booting the UI. RTC_NOINIT survives esp_restart().
+constexpr uint32_t TICKER_RESUME_MAGIC = 0x52534D45;  // 'RSME'
+constexpr uint64_t TICKER_WAKE_LIMIT_US = 120ULL * 1000000ULL;
+RTC_NOINIT_ATTR uint32_t tickerResumeMagic;
+
 void requestTickerSleep() { tickerSleepPending = true; }
 
+static void tickerWatchdogFired(void*) {
+  tickerResumeMagic = TICKER_RESUME_MAGIC;
+  esp_restart();
+}
+
+static void armTickerWatchdog() {
+  static esp_timer_handle_t timer = nullptr;
+  if (!timer) {
+    esp_timer_create_args_t args = {};
+    args.callback = &tickerWatchdogFired;
+    args.name = "tickerwdt";
+    if (esp_timer_create(&args, &timer) != ESP_OK) {
+      LOG_ERR("TICK", "Wake watchdog unavailable");
+      return;
+    }
+  }
+  esp_timer_stop(timer);
+  esp_timer_start_once(timer, TICKER_WAKE_LIMIT_US);
+}
+
+static void appendBootLog(const char* line);
+
+// seconds > 0: ticker keeps running, so the timer is armed and the power switch held on
+// (on boards where it gates the battery, switching it off would make the timer useless).
 [[noreturn]] static void tickerDeepSleep(const uint32_t seconds) {
   ticker::wifiOff();
   halTiltSensor.deepSleep();
   if (tickerDisplayReady) display.deepSleep();
-  Storage.prepareForDeepSleep();
   LOG_INF("TICK", "Sleeping %lu s", static_cast<unsigned long>(seconds));
-  powerManager.startDeepSleep(gpio, seconds);
+  {
+    char line[96];
+    snprintf(line, sizeof(line), "%lld,sleep,timer=%lu,keepPower=%d,usb=%d\n", static_cast<long long>(ticker::nowUtc()),
+             static_cast<unsigned long>(seconds), seconds > 0 ? 1 : 0, gpio.isUsbConnected() ? 1 : 0);
+    appendBootLog(line);
+  }
+  Storage.prepareForDeepSleep();
+  powerManager.startDeepSleep(gpio, seconds, seconds > 0);
   for (;;) delay(1000);  // startDeepSleep does not return
 }
 
@@ -380,17 +417,109 @@ static void tickerDraw(const ticker::ScreenStatus& status, const bool fullRefres
 // just advance the rotation on cached quotes; draw; sleep until the next
 // fetch or rotation, whichever is first. fromTimer: woken by the RTC timer
 // with no UI running; otherwise entered from the app's "Start" row.
-[[noreturn]] static void runTickerCycle(const bool fromTimer) {
+// Diagnostics: one line per boot and per ticker sleep in /.crosspoint/boot_log.csv, so a
+// stopped ticker shows whether the chip lost power (reset=POWERON), never woke (button
+// boot with reset=DEEPSLEEP) or crashed on wake (BROWNOUT/PANIC/WDT).
+static const char* resetReasonName(esp_reset_reason_t r) {
+  switch (r) {
+    case ESP_RST_POWERON:
+      return "POWERON";
+    case ESP_RST_EXT:
+      return "EXT";
+    case ESP_RST_SW:
+      return "SW";
+    case ESP_RST_PANIC:
+      return "PANIC";
+    case ESP_RST_INT_WDT:
+      return "INT_WDT";
+    case ESP_RST_TASK_WDT:
+      return "TASK_WDT";
+    case ESP_RST_WDT:
+      return "WDT";
+    case ESP_RST_DEEPSLEEP:
+      return "DEEPSLEEP";
+    case ESP_RST_BROWNOUT:
+      return "BROWNOUT";
+    case ESP_RST_SDIO:
+      return "SDIO";
+    case ESP_RST_USB:
+      return "USB";
+    case ESP_RST_JTAG:
+      return "JTAG";
+    default:
+      return "OTHER";
+  }
+}
+
+static const char* wakeCauseName(esp_sleep_wakeup_cause_t c) {
+  switch (c) {
+    case ESP_SLEEP_WAKEUP_TIMER:
+      return "TIMER";
+    case ESP_SLEEP_WAKEUP_GPIO:
+      return "GPIO";
+    case ESP_SLEEP_WAKEUP_EXT1:
+      return "EXT1";
+    case ESP_SLEEP_WAKEUP_UNDEFINED:
+      return "NONE";
+    default:
+      return "OTHER";
+  }
+}
+
+static void appendBootLog(const char* line) {
+  constexpr char path[] = "/.crosspoint/boot_log.csv";
+  bool tooBig = false;
+  {
+    HalFile existing;
+    if (Storage.exists(path) && Storage.openFileForRead("BOOT", path, existing))
+      tooBig = existing.fileSize() > 64 * 1024;
+  }
+  if (tooBig) Storage.remove(path);
+  HalFile f = Storage.open(path, O_WRONLY | O_CREAT | O_APPEND);
+  if (f) f.write(line, strlen(line));
+}
+
+static void logBoot() {
+  char line[128];
+  snprintf(line, sizeof(line), "%lld,boot,reset=%s,wake=%s,usb=%d,bat=%d,ver=%s\n",
+           static_cast<long long>(ticker::nowUtc()), resetReasonName(esp_reset_reason()),
+           wakeCauseName(esp_sleep_get_wakeup_cause()), gpio.isUsbConnected() ? 1 : 0,
+           static_cast<int>(powerManager.getBatteryPercentage()), CROSSPOINT_VERSION);
+  appendBootLog(line);
+}
+
+// configLoaded: whether /.crosspoint/ticker.json was readable this boot.
+// resumed: this boot is the wake watchdog's restart of a hung wake.
+[[noreturn]] static void runTickerCycle(const bool fromTimer, const bool configLoaded, const bool resumed) {
   const unsigned long startMs = millis();
+  armTickerWatchdog();
   auto& cfg = ticker::config();
   time_t now = ticker::nowUtc();
+  const char* event = fromTimer ? nullptr : "start";
 
   if (fromTimer) {
-    if (!cfg.active || !gpio.deviceIsX3()) tickerDeepSleep(0);
+    // RTC memory is the source of truth for "ticker mode is on"; the SD config is a
+    // convenience that can fail to read right after the card powers back up.
+    if (!configLoaded || !cfg.active) {
+      if (ticker::restoreFromRtc()) {
+        event = "config-rtc";
+      } else {
+        ticker::appendLog(now, powerManager.getBatteryPercentage(), false, false, millis() - startMs, "inactive");
+        tickerDeepSleep(0);
+      }
+    } else {
+      ticker::rememberActive(cfg);
+    }
     // Woke before the target (capped long sleep or RC clock drift): sleep the rest.
     const int64_t early = ticker::secondsUntilTarget(now);
-    if (early > 90) tickerDeepSleep(ticker::capSleep(static_cast<uint32_t>(early)));
+    if (!resumed && early > 90) {
+      ticker::appendLog(now, powerManager.getBatteryPercentage(), false, true, millis() - startMs, "early");
+      tickerDeepSleep(ticker::capSleep(static_cast<uint32_t>(early)));
+    }
+  } else {
+    ticker::rememberActive(cfg);
   }
+  if (resumed) event = "watchdog";
 
   const int battery = powerManager.getBatteryPercentage();
   ticker::loadCache();
@@ -400,13 +529,23 @@ static void tickerDraw(const ticker::ScreenStatus& status, const bool fullRefres
   if (!gpio.isUsbConnected() && battery > 0 && battery < 8) {
     cfg.active = false;
     ticker::saveConfig();
+    ticker::forgetActive();
     status.banner = tr(STR_TICKER_PAUSED_BATTERY);
     tickerDraw(status, false);
+    ticker::appendLog(now, battery, false, false, millis() - startMs, "lowbat");
     tickerDeepSleep(0);
   }
 
-  const bool doFetch = !fromTimer || ticker::fetchDue(now);
+  // After a watchdog restart, don't retry the network straight away (it may hang again):
+  // count it as a failed fetch, redraw from cache and let the backoff schedule the retry.
+  const bool doFetch = !resumed && (!fromTimer || ticker::fetchDue(now));
   bool ok = true;
+  if (resumed) {
+    ok = false;
+    const uint32_t retry = ticker::noteFetchResult(false);
+    const bool hasCrypto = ticker::anyCrypto(cfg) || ticker::customEnabled(cfg);
+    ticker::setNextFetch(now > 0 ? now + (retry > 0 ? retry : ticker::nextRefreshSeconds(cfg, now, hasCrypto)) : 0);
+  }
   if (doFetch) {
     ok = false;
     bool customDownloaded = false;
@@ -445,11 +584,12 @@ static void tickerDraw(const ticker::ScreenStatus& status, const bool fullRefres
   }
   if (now > 0) ticker::setWakeTarget(now + untilWake);
 
-  status.offline = doFetch && !ok;
+  status.offline = (doFetch || resumed) && !ok;
   status.nextUpdate = nextFetch;
   status.pageIndex = ticker::rotationIndex();
   tickerDraw(status, ticker::wantFullRefresh());
-  ticker::appendLog(now, battery, doFetch, ok, millis() - startMs);
+  if (!event) event = doFetch ? "fetch" : "rotate";
+  ticker::appendLog(now, battery, doFetch, ok, millis() - startMs, event);
   tickerDeepSleep(ticker::capSleep(untilWake));
 }
 
@@ -463,10 +603,20 @@ static void tickerDraw(const ticker::ScreenStatus& status, const bool fullRefres
   activityManager.goToFullScreenMessage(tr(STR_UPDATING), EpdFontFamily::BOLD);
   activityManager.loop();
   tickerDisplayReady = true;
-  runTickerCycle(false);
+  runTickerCycle(false, true, false);
 }
 
 void setup() {
+#if FREEINK_MCU_C3 && (FREEINK_DEVICE_X3 || FREEINK_DEVICE_X4)
+  // GPIO13 gates the battery on the Xteink C3 boards. A ticker timer wake arrives with
+  // it held HIGH; the SD driver later releases that hold and re-drives the pin, and
+  // with the output register still at its reset value of 0 the pad would glitch LOW
+  // and cut battery power. Load HIGH into the register first, then release the hold.
+  // (The factory firmware also drives GPIO13 HIGH at boot, so this is a no-op otherwise.)
+  gpio_set_level(GPIO_NUM_13, 1);
+  gpio_set_direction(GPIO_NUM_13, GPIO_MODE_OUTPUT);
+  gpio_hold_dis(GPIO_NUM_13);
+#endif
   BoardConfig::holdPowerRails();
 
 #ifdef ENABLE_SERIAL_LOG
@@ -564,10 +714,14 @@ void setup() {
   // light off unless Restore Light on Wake is enabled; silent maintenance
   // reboots replay the live state captured at restart, so they neither go dark
   // nor light up against the user's wake preference.
-  ticker::loadConfig();
-  if (wakeupReason == HalGPIO::WakeupReason::Timer) {
-    runTickerCycle(true);
+  logBoot();
+  const bool tickerConfigLoaded = ticker::loadConfig();
+  const bool tickerResumed = tickerResumeMagic == TICKER_RESUME_MAGIC;
+  tickerResumeMagic = 0;
+  if (wakeupReason == HalGPIO::WakeupReason::Timer || (tickerResumed && ticker::activeInRtc())) {
+    runTickerCycle(true, tickerConfigLoaded, tickerResumed);
   }
+  ticker::forgetActive();
   if (ticker::config().active) {
     // Any non-timer boot (power button, flash, USB) leaves ticker mode.
     ticker::config().active = false;

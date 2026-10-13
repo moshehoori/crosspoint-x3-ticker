@@ -119,7 +119,17 @@ bool wantFullRefresh();
 // Long sleeps are split so the RC slow clock is re-checked against the RTC.
 uint32_t capSleep(uint32_t seconds);
 
-void appendLog(time_t now, int battery, bool fetched, bool ok, uint32_t awakeMs);
+// One CSV line per wake: epoch,battery,fetched,ok,awake_ms,event. event says what the wake did
+// ("start", "fetch", "rotate", "early", "watchdog", "config-rtc", "inactive", "lowbat").
+void appendLog(time_t now, int battery, bool fetched, bool ok, uint32_t awakeMs, const char* event);
+
+// Ticker mode is also remembered in RTC memory (with a copy of the config), so a timer
+// wake never depends on reading the SD card to know it should keep running.
+void rememberActive(const Config& cfg);
+bool activeInRtc();
+// Restores the remembered config into config(); false if none.
+bool restoreFromRtc();
+void forgetActive();
 
 // Pages shown in turn: the grid (1) or one per symbol, plus the custom image page if enabled.
 int pageCount(const Config& cfg);

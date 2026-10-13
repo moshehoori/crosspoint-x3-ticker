@@ -66,7 +66,7 @@ void HalPowerManager::setPowerSaving(bool enabled) {
   // Otherwise, no change needed
 }
 
-void HalPowerManager::startDeepSleep(HalGPIO& gpio, const uint32_t timerWakeSeconds) const {
+void HalPowerManager::startDeepSleep(HalGPIO& gpio, const uint32_t timerWakeSeconds, const bool keepPowerOn) const {
 #ifdef ENABLE_SERIAL_LOG
   // Tear down HWCDC so the host sees a clean disconnect and the peripheral
   // doesn't hold power domains that interfere with USB-powered GPIO wake.
@@ -82,9 +82,11 @@ void HalPowerManager::startDeepSleep(HalGPIO& gpio, const uint32_t timerWakeSeco
     // Release any surviving pad hold first: hold_en survives deep sleep via
     // the SDK's deepSleep() (esp_sleep_config_gpio_isolate +
     // gpio_deep_sleep_hold_en), and a held pad silently ignores the drive.
-    gpio_hold_dis(XTEINK_C3_GPIO13);
+    // Level before direction/hold release, so keeping it ON never glitches LOW.
+    gpio_set_level(XTEINK_C3_GPIO13, keepPowerOn ? 1 : 0);
     gpio_set_direction(XTEINK_C3_GPIO13, GPIO_MODE_OUTPUT);
-    gpio_set_level(XTEINK_C3_GPIO13, 0);
+    gpio_hold_dis(XTEINK_C3_GPIO13);
+    gpio_set_level(XTEINK_C3_GPIO13, keepPowerOn ? 1 : 0);
     gpio_hold_en(XTEINK_C3_GPIO13);
   }
 #endif
@@ -117,7 +119,25 @@ void HalPowerManager::startDeepSleep(HalGPIO& gpio, const uint32_t timerWakeSeco
   // button. Must run after display.deepSleep() so the panel controller gets its
   // deep-sleep command while its rail is still up (enterDeepSleep() in main.cpp
   // guarantees that ordering).
+#if !SOC_PM_SUPPORT_EXT1_WAKEUP
+  if (keepPowerOn && gpio.isXteinkDevice()) {
+    // powerDownRailsForSleep() would drive the X3 "SD enable" (GPIO13) LOW, and on
+    // battery even a microsecond LOW on that battery gate powers the board off. Its
+    // only other X3 effect is holding display RESET HIGH, so do just that here.
+    const int8_t rst = BoardConfig::ACTIVE.display.rst;
+    if (rst >= 0) {
+      const auto g = static_cast<gpio_num_t>(rst);
+      gpio_hold_dis(g);
+      gpio_set_level(g, 1);
+      gpio_set_direction(g, GPIO_MODE_OUTPUT);
+      gpio_hold_en(g);
+    }
+  } else {
+    freeink::PowerManager::powerDownRailsForSleep();
+  }
+#else
   freeink::PowerManager::powerDownRailsForSleep();
+#endif
 
 #if FREEINK_DEVICE_PAPERMONO
   // Its power button is behind the M5PM1 PMIC rather than an ESP GPIO, so
