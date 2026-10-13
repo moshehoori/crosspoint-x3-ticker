@@ -57,6 +57,7 @@ A status line at the bottom shows when the data was fetched, when the next updat
 | **Screen orientation** | Portrait, Landscape CCW, or Landscape CW. |
 | **Custom image** | *Off*, *Only the image*, or *Extra page* (shown in turn with your stocks). See [Custom images and webhooks](#custom-images-and-webhooks). |
 | **Custom image URL** | An `http://` or `https://` address that returns a PNG or BMP. |
+| **Image refresh interval** | How often the custom image is downloaded: 5 minutes to 4 hours, default 15 minutes. Day and night; **Market hours only** never applies to it. |
 
 ### From a browser
 
@@ -73,6 +74,7 @@ Scripts can use the same API. These keys go in `POST /api/settings`, and enum va
 | `tickerMarketHoursOnly` | 0 = Off, 1 = On |
 | `tickerOrientation` | 0 = Portrait, 1 = Landscape CCW, 2 = Landscape CW |
 | `tickerCustomMode` | 0 = Off, 1 = Only the image, 2 = Extra page |
+| `tickerCustomIntervalMin` | index into 5, 10, 15, 30, 60 min, 2, 3, 4 h |
 | `tickerCustomUrl` | `"http://192.168.1.10:8080/dashboard.png?w=792&h=528"` |
 
 ```bash
@@ -119,7 +121,7 @@ These screenshots were taken from the reader. They match the server's image pixe
 
 **Other image sources:** anything that serves a PNG or BMP works, for example Home Assistant, n8n, a Cloudflare Worker, or a static file. Images are scaled down to fit and converted to black and white on the reader. For the sharpest result, serve a 1-bit image at the screen size: 792 × 528, or 528 × 792 in portrait.
 
-**Schedule:** with *Only the image*, the reader refreshes every interval around the clock. With *Extra page*, the image follows the crypto rule: every interval during market hours, hourly otherwise.
+**Schedule:** the image has its own **Image refresh interval** and is refreshed day and night, in both modes. **Market hours only** and the stock **Refresh interval** never affect it. When both stocks and the image are due on the same wake, they share one Wi-Fi connection. Otherwise the reader wakes for whichever is due first. A failed image download is retried after 5 minutes.
 
 **Failures:** if the server can't be reached or returns something that isn't an image, the reader keeps the last good image and shows a small **Offline** badge in the corner.
 

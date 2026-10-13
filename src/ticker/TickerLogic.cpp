@@ -158,6 +158,31 @@ bool rotationActive(const Config& cfg, time_t now, bool /*hasCrypto*/) {
   return marketOpen(nyClock(now));
 }
 
+uint32_t nextCustomRefreshSeconds(const Config& cfg, bool ok) {
+  const uint32_t interval = static_cast<uint32_t>(cfg.customIntervalMin) * 60u;
+  constexpr uint32_t RETRY_S = 5 * 60;
+  return ok ? interval : (interval < RETRY_S ? interval : RETRY_S);
+}
+
+uint32_t secondsUntilNextWake(const Config& cfg, time_t now, time_t nextQuoteFetch, time_t nextCustomFetch,
+                              bool rotationStepActive) {
+  constexpr uint32_t MIN_S = 60;
+  constexpr uint32_t NONE = 0xFFFFFFFFu;
+  uint32_t best = NONE;
+  auto consider = [&](uint32_t s) {
+    if (s < MIN_S) s = MIN_S;
+    if (s < best) best = s;
+  };
+  auto until = [&](time_t at, uint8_t intervalMin) -> uint32_t {
+    if (now == 0) return static_cast<uint32_t>(intervalMin) * 60u;  // unknown clock: plain interval
+    return at > now ? static_cast<uint32_t>(at - now) : MIN_S;
+  };
+  if (wantsQuotes(cfg)) consider(until(nextQuoteFetch, cfg.intervalMin));
+  if (customEnabled(cfg)) consider(until(nextCustomFetch, cfg.customIntervalMin));
+  if (rotationStepActive && cfg.rotateMin > 0) consider(static_cast<uint32_t>(cfg.rotateMin) * 60u);
+  return best == NONE ? static_cast<uint32_t>(cfg.intervalMin) * 60u : best;
+}
+
 // Fills q from one spark result entry. Points are evenly downsampled to MAX_POINTS.
 bool parseSparkEntry(JsonObjectConst entry, Quote& q) {
   JsonObjectConst resp = entry["response"][0];

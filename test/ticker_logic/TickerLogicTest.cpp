@@ -128,6 +128,61 @@ TEST(TickerSchedule, RotationPausesOffHours) {
   EXPECT_TRUE(rotationActive(stocksOnly(15, false), utc(2026, 10, 17, 16, 0), false));
 }
 
+// ---- separate webhook image schedule ------------------------------------------------
+
+namespace {
+Config withImage(uint8_t stockMin, uint8_t imageMin, uint8_t mode = CUSTOM_EXTRA_PAGE) {
+  Config c = stocksOnly(stockMin);
+  c.customMode = mode;
+  c.customIntervalMin = imageMin;
+  strcpy(c.customUrl, "https://example.com/a.png");
+  return c;
+}
+}  // namespace
+
+TEST(TickerCustomSchedule, OwnIntervalAndRetry) {
+  Config c = withImage(30, 10);
+  EXPECT_EQ(nextCustomRefreshSeconds(c, true), 10u * 60);
+  EXPECT_EQ(nextCustomRefreshSeconds(c, false), 5u * 60);  // retry sooner after a failure
+  c.customIntervalMin = 5;
+  EXPECT_EQ(nextCustomRefreshSeconds(c, false), 5u * 60);
+}
+
+TEST(TickerCustomSchedule, WakeAtTheEarlierSchedule) {
+  const time_t now = utc(2026, 10, MON, 18, 0);
+  const Config c = withImage(30, 10);
+  EXPECT_EQ(secondsUntilNextWake(c, now, now + 30 * 60, now + 10 * 60, false), 10u * 60);
+  EXPECT_EQ(secondsUntilNextWake(c, now, now + 4 * 60, now + 10 * 60, false), 4u * 60);
+}
+
+TEST(TickerCustomSchedule, MarketHoursDoNotDelayTheImage) {
+  // Saturday: stocks sleep until Monday's open, the image keeps its 15-minute schedule.
+  const time_t now = utc(2026, 10, 17, 16, 0);
+  const Config c = withImage(15, 15);
+  const time_t nextQuote = now + nextRefreshSeconds(c, now, false);
+  EXPECT_GT(nextQuote - now, 24 * 3600);
+  EXPECT_EQ(secondsUntilNextWake(c, now, nextQuote, now + nextCustomRefreshSeconds(c, true), false), 15u * 60);
+}
+
+TEST(TickerCustomSchedule, DisabledScheduleIsIgnored) {
+  const time_t now = utc(2026, 10, MON, 18, 0);
+  Config c = withImage(30, 10);
+  c.customMode = CUSTOM_OFF;
+  EXPECT_EQ(secondsUntilNextWake(c, now, now + 30 * 60, now + 60, false), 30u * 60);
+  Config imageOnly = withImage(30, 10, CUSTOM_ONLY);
+  EXPECT_EQ(secondsUntilNextWake(imageOnly, now, now + 60, now + 10 * 60, false), 10u * 60);
+}
+
+TEST(TickerCustomSchedule, RotationStepAndFloors) {
+  const time_t now = utc(2026, 10, MON, 18, 0);
+  Config c = withImage(30, 60);
+  c.rotateMin = 5;
+  EXPECT_EQ(secondsUntilNextWake(c, now, now + 30 * 60, now + 60 * 60, true), 5u * 60);
+  EXPECT_EQ(secondsUntilNextWake(c, now, now + 30 * 60, now + 60 * 60, false), 30u * 60);
+  EXPECT_EQ(secondsUntilNextWake(c, now, now - 100, now + 60 * 60, false), 60u);  // overdue -> 60 s floor
+  EXPECT_EQ(secondsUntilNextWake(c, 0, 0, 0, false), 30u * 60);                   // unknown clock: shortest interval
+}
+
 // ---- symbols ----------------------------------------------------------------------
 
 TEST(TickerSymbols, CopySymbolCleansAndUppercases) {

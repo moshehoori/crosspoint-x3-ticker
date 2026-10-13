@@ -38,6 +38,7 @@
 #include "fontIds.h"
 #include "platform/UsbSerialJtagHandoff.h"
 #include "ticker/Ticker.h"
+#include "ticker/TickerLogic.h"
 #include "util/ButtonNavigator.h"
 #include "util/ScreenshotUtil.h"
 #include "util/Timezones.h"
@@ -536,56 +537,66 @@ static void logBoot() {
     tickerDeepSleep(0);
   }
 
+  // Two independent schedules: quotes (interval + market hours) and the custom image
+  // (its own interval, day and night). Fetch whatever is due in one Wi-Fi session.
+  const bool quotesOn = ticker::wantsQuotes(cfg);
+  const bool customOn = ticker::customEnabled(cfg);
   // After a watchdog restart, don't retry the network straight away (it may hang again):
   // count it as a failed fetch, redraw from cache and let the backoff schedule the retry.
-  const bool doFetch = !resumed && (!fromTimer || ticker::fetchDue(now));
-  bool ok = true;
+  const bool quotesDue = !resumed && quotesOn && (!fromTimer || ticker::fetchDue(now));
+  const bool customDue = !resumed && customOn && (!fromTimer || ticker::customFetchDue(now));
+  const bool doFetch = quotesDue || customDue;
+  bool quotesOk = true;
+  bool customOk = true;
   if (resumed) {
-    ok = false;
+    quotesOk = customOk = false;
     const uint32_t retry = ticker::noteFetchResult(false);
-    const bool hasCrypto = ticker::anyCrypto(cfg) || ticker::customEnabled(cfg);
-    ticker::setNextFetch(now > 0 ? now + (retry > 0 ? retry : ticker::nextRefreshSeconds(cfg, now, hasCrypto)) : 0);
+    if (quotesOn) {
+      const uint32_t next = retry > 0 ? retry : ticker::nextRefreshSeconds(cfg, now, ticker::anyCrypto(cfg));
+      ticker::setNextFetch(now > 0 ? now + next : 0);
+    }
+    if (customOn) ticker::setNextCustomFetch(now > 0 ? now + ticker::nextCustomRefreshSeconds(cfg, false) : 0);
   }
   if (doFetch) {
-    ok = false;
     bool customDownloaded = false;
-    if (ticker::connectWifi(12000)) {
-      if (ticker::ntpDue(now) && halClock.syncFromNTP()) {
-        now = ticker::nowUtc();
-        ticker::markNtpSynced(now);
-      }
-      ok = true;
-      if (ticker::wantsQuotes(cfg)) {
-        ok = ticker::fetchQuotes(cfg, now);
-        if (ok) ticker::saveCache();
-      }
-      if (ticker::customEnabled(cfg)) customDownloaded = ticker::downloadCustomImage(cfg);
+    const bool wifi = ticker::connectWifi(12000);
+    if (wifi && ticker::ntpDue(now) && halClock.syncFromNTP()) {
+      now = ticker::nowUtc();
+      ticker::markNtpSynced(now);
     }
+    if (quotesDue) {
+      quotesOk = wifi && ticker::fetchQuotes(cfg, now);
+      if (quotesOk) ticker::saveCache();
+    }
+    if (customDue && wifi) customDownloaded = ticker::downloadCustomImage(cfg);
     ticker::wifiOff();
-    if (ticker::customEnabled(cfg)) ok = customDownloaded && ticker::prepareCustomImage(cfg) && ok;
-    const uint32_t retry = ticker::noteFetchResult(ok);
-    // Webhook-fed custom images, like crypto, change outside market hours.
-    const bool hasCrypto = ticker::anyCrypto(cfg) || ticker::customEnabled(cfg);
-    ticker::setNextFetch(now > 0 ? now + (retry > 0 ? retry : ticker::nextRefreshSeconds(cfg, now, hasCrypto)) : 0);
+    if (customDue) customOk = customDownloaded && ticker::prepareCustomImage(cfg);
+
+    if (quotesDue) {
+      const uint32_t retry = ticker::noteFetchResult(quotesOk);
+      const uint32_t next = retry > 0 ? retry : ticker::nextRefreshSeconds(cfg, now, ticker::anyCrypto(cfg));
+      ticker::setNextFetch(now > 0 ? now + next : 0);
+    }
+    if (customDue) ticker::setNextCustomFetch(now > 0 ? now + ticker::nextCustomRefreshSeconds(cfg, customOk) : 0);
   }
+  const bool ok = quotesOk && customOk;
 
   const int pages = ticker::pageCount(cfg);
   const bool rotating = pages > 1;
   if (rotating && fromTimer) ticker::advanceRotation(pages);
 
-  // Next wake: the next fetch, or sooner for a rotation step while rotation is active.
-  const time_t nextFetch = ticker::nextFetchAt();
-  // Unknown clock (no RTC time and NTP failed): fall back to the plain interval rather than spinning.
-  uint32_t untilWake = now == 0 ? static_cast<uint32_t>(cfg.intervalMin) * 60u
-                                : (nextFetch > now ? static_cast<uint32_t>(nextFetch - now) : 60u);
-  if (rotating && cfg.rotateMin > 0 && ticker::rotationActive(cfg, now, ticker::anyCrypto(cfg))) {
-    const uint32_t step = static_cast<uint32_t>(cfg.rotateMin) * 60u;
-    if (step < untilWake) untilWake = step;
-  }
+  const time_t nextFetch = quotesOn ? ticker::nextFetchAt() : 0;
+  const time_t nextCustom = customOn ? ticker::nextCustomFetchAt() : 0;
+  const bool rotationStep = rotating && ticker::rotationActive(cfg, now, ticker::anyCrypto(cfg));
+  const uint32_t untilWake = ticker::secondsUntilNextWake(cfg, now, nextFetch, nextCustom, rotationStep);
   if (now > 0) ticker::setWakeTarget(now + untilWake);
 
+  // "Next" on screen: the earlier of the two scheduled fetches.
+  time_t nextUpdate = nextFetch;
+  if (nextCustom > 0 && (nextUpdate == 0 || nextCustom < nextUpdate)) nextUpdate = nextCustom;
+
   status.offline = (doFetch || resumed) && !ok;
-  status.nextUpdate = nextFetch;
+  status.nextUpdate = nextUpdate;
   status.pageIndex = ticker::rotationIndex();
   tickerDraw(status, ticker::wantFullRefresh());
   if (!event) event = doFetch ? "fetch" : "rotate";

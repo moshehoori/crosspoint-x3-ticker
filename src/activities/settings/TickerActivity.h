@@ -10,7 +10,7 @@ class TickerActivity final : public UiListActivity {
  public:
   explicit TickerActivity(GfxRenderer& renderer, MappedInputManager& mappedInput);
 
-  static constexpr int MENU_ITEMS = 10;
+  static constexpr int MENU_ITEMS = 11;
 
   void onEnter() override;
   void onExit() override;

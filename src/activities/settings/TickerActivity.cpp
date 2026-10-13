@@ -30,13 +30,14 @@ enum Row {
   ROW_ORIENTATION,
   ROW_CUSTOM_MODE,
   ROW_CUSTOM_URL,
+  ROW_CUSTOM_INTERVAL,
 };
 
-constexpr StrId ROW_NAMES[TickerActivity::MENU_ITEMS] = {StrId::STR_TICKER_START,        StrId::STR_TICKER_REFRESH,
-                                                         StrId::STR_TICKER_SYMBOLS,      StrId::STR_TICKER_LAYOUT,
-                                                         StrId::STR_TICKER_ROTATE_EVERY, StrId::STR_TICKER_INTERVAL,
-                                                         StrId::STR_TICKER_MARKET_HOURS, StrId::STR_TICKER_SCREEN,
-                                                         StrId::STR_TICKER_CUSTOM,       StrId::STR_TICKER_CUSTOM_URL};
+constexpr StrId ROW_NAMES[TickerActivity::MENU_ITEMS] = {
+    StrId::STR_TICKER_START,        StrId::STR_TICKER_REFRESH,        StrId::STR_TICKER_SYMBOLS,
+    StrId::STR_TICKER_LAYOUT,       StrId::STR_TICKER_ROTATE_EVERY,   StrId::STR_TICKER_INTERVAL,
+    StrId::STR_TICKER_MARKET_HOURS, StrId::STR_TICKER_SCREEN,         StrId::STR_TICKER_CUSTOM,
+    StrId::STR_TICKER_CUSTOM_URL,   StrId::STR_TICKER_CUSTOM_INTERVAL};
 
 template <size_t N>
 uint8_t nextInList(const uint8_t (&list)[N], uint8_t current) {
@@ -125,6 +126,9 @@ void TickerActivity::activateIndex(const int index) {
     case ROW_CUSTOM_MODE:
       cfg.customMode = static_cast<uint8_t>((cfg.customMode + 1) % ticker::CUSTOM_MODE_COUNT);
       break;
+    case ROW_CUSTOM_INTERVAL:
+      cfg.customIntervalMin = nextInList(ticker::INTERVALS, cfg.customIntervalMin);
+      break;
     case ROW_CUSTOM_URL:
       startActivityForResult(std::make_unique<KeyboardEntryActivity>(renderer, mappedInput, tr(STR_TICKER_CUSTOM_URL),
                                                                      cfg.customUrl[0] ? cfg.customUrl : "http://",
@@ -204,6 +208,8 @@ void TickerActivity::buildScreen(UiScreen& screen) {
   rowValues_[ROW_ORIENTATION] = ticker::orientationLabel(cfg.orientation);
   rowValues_[ROW_CUSTOM_MODE] = ticker::customModeLabel(cfg.customMode);
   rowValues_[ROW_CUSTOM_URL] = cfg.customUrl[0] ? cfg.customUrl : tr(STR_NOT_SET);
+  ticker::formatInterval(buf, sizeof(buf), cfg.customIntervalMin);
+  rowValues_[ROW_CUSTOM_INTERVAL] = buf;
   for (int i = 0; i < MENU_ITEMS; i++) {
     rowItems_[i].value = rowValues_[i].empty() ? nullptr : rowValues_[i].c_str();
   }

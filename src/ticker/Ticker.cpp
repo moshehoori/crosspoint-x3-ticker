@@ -37,6 +37,7 @@ constexpr uint8_t FULL_REFRESH_EVERY = 8;
 // keeps its schedule, rotation, failure backoff and fast-join hints without SD writes.
 RTC_DATA_ATTR time_t rtcWakeTarget = 0;
 RTC_DATA_ATTR time_t rtcNextFetch = 0;
+RTC_DATA_ATTR time_t rtcNextCustomFetch = 0;
 RTC_DATA_ATTR time_t rtcLastNtp = 0;
 RTC_DATA_ATTR uint8_t rtcRotation = 0;
 RTC_DATA_ATTR uint8_t rtcFailCount = 0;
@@ -112,6 +113,8 @@ bool loadConfig() {
   gConfig.active = doc["active"] | false;
   const uint8_t cm = doc["customMode"] | 0;
   gConfig.customMode = cm < CUSTOM_MODE_COUNT ? cm : CUSTOM_OFF;
+  const uint8_t ci = doc["customIntervalMin"] | 15;
+  gConfig.customIntervalMin = inList(INTERVALS, ci) ? ci : 15;
   snprintf(gConfig.customUrl, sizeof(gConfig.customUrl), "%s", doc["customUrl"] | "");
   return true;
 }
@@ -127,6 +130,7 @@ bool saveConfig() {
   doc["orientation"] = gConfig.orientation;
   doc["active"] = gConfig.active;
   doc["customMode"] = gConfig.customMode;
+  doc["customIntervalMin"] = gConfig.customIntervalMin;
   doc["customUrl"] = gConfig.customUrl;
   return PersistableStoreBase::writeDocToFile(CONFIG_PATH, doc);
 }
@@ -425,6 +429,10 @@ int64_t secondsUntilTarget(time_t now) {
 void setNextFetch(time_t at) { rtcNextFetch = at; }
 time_t nextFetchAt() { return rtcNextFetch; }
 bool fetchDue(time_t now) { return now == 0 || rtcNextFetch == 0 || now + 90 >= rtcNextFetch; }
+
+void setNextCustomFetch(time_t at) { rtcNextCustomFetch = at; }
+time_t nextCustomFetchAt() { return rtcNextCustomFetch; }
+bool customFetchDue(time_t now) { return now == 0 || rtcNextCustomFetch == 0 || now + 90 >= rtcNextCustomFetch; }
 
 int rotationIndex() { return rtcRotation; }
 void advanceRotation(int count) { rtcRotation = count > 0 ? static_cast<uint8_t>((rtcRotation + 1) % count) : 0; }

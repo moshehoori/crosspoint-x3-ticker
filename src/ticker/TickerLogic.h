@@ -28,6 +28,16 @@ time_t nyOffsetSeconds(time_t utc);
 // Regular NYSE session (Mon-Fri 09:30-16:00 New York time, holidays not modelled).
 bool marketOpenAt(time_t now);
 
+// Custom image schedule: its own interval, day and night (market hours never apply).
+// After a failed download, retry in 5 minutes (or sooner if the interval is shorter).
+uint32_t nextCustomRefreshSeconds(const Config& cfg, bool ok);
+
+// Seconds until the next wake: the earliest of the enabled schedules (quotes, custom
+// image) and, while rotation is active, the next rotation step. Never below 60.
+// nextQuoteFetch/nextCustomFetch are epochs (0 = due now); now == 0 means unknown clock.
+uint32_t secondsUntilNextWake(const Config& cfg, time_t now, time_t nextQuoteFetch, time_t nextCustomFetch,
+                              bool rotationStepActive);
+
 // Fills q from one entry of Yahoo's v7/finance/spark "result" array; false if unusable.
 bool parseSparkEntry(JsonObjectConst entry, Quote& q);
 

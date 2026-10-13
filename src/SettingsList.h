@@ -212,7 +212,7 @@ inline std::vector<StrId> homeThemeValues() {
 inline std::vector<SettingInfo> getTickerSettingsList() {
   using namespace ticker;
   std::vector<SettingInfo> v;
-  v.reserve(8);
+  v.reserve(9);
   auto minuteLabels = [](const uint8_t* steps, int count, bool zeroIsEachUpdate) {
     std::vector<std::string> labels;
     labels.reserve(count);
@@ -274,6 +274,13 @@ inline std::vector<SettingInfo> getTickerSettingsList() {
       StrId::STR_TICKER_CUSTOM, {StrId::STR_STATE_OFF, StrId::STR_TICKER_CUSTOM_ONLY, StrId::STR_TICKER_CUSTOM_PAGE},
       [] { return config().customMode; }, [](uint8_t val) { config().customMode = val; }, "tickerCustomMode",
       StrId::STR_TICKER));
+
+  SettingInfo customInterval = SettingInfo::DynamicEnum(
+      StrId::STR_TICKER_CUSTOM_INTERVAL, {},
+      [indexOf] { return indexOf(INTERVALS, INTERVAL_COUNT, config().customIntervalMin); },
+      [](uint8_t i) { config().customIntervalMin = INTERVALS[i]; }, "tickerCustomIntervalMin", StrId::STR_TICKER);
+  customInterval.enumStringValues = minuteLabels(INTERVALS, INTERVAL_COUNT, false);
+  v.push_back(std::move(customInterval));
 
   v.push_back(SettingInfo::DynamicString(
       StrId::STR_TICKER_CUSTOM_URL, [] { return std::string(config().customUrl); },

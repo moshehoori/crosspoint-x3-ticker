@@ -38,6 +38,7 @@ struct Config {
   uint8_t orientation = PORTRAIT;
   bool active = false;  // ticker mode armed: timer wakes refresh instead of booting the UI
   uint8_t customMode = CUSTOM_OFF;
+  uint8_t customIntervalMin = 15;  // webhook image refresh; independent of the stock schedule and market hours
   char customUrl[CUSTOM_URL_LEN] = "";
 };
 
@@ -112,6 +113,10 @@ int64_t secondsUntilTarget(time_t now);
 void setNextFetch(time_t at);
 time_t nextFetchAt();
 bool fetchDue(time_t now);
+// The custom image has its own schedule, kept separately from the quotes'.
+void setNextCustomFetch(time_t at);
+time_t nextCustomFetchAt();
+bool customFetchDue(time_t now);
 int rotationIndex();
 void advanceRotation(int count);
 // Failure backoff: returns retry delay in seconds, or 0 when the normal schedule applies.
