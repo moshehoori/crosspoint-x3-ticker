@@ -122,6 +122,16 @@ TEST(TickerSchedule, LongIntervals) {
   EXPECT_EQ(nextRefreshSeconds(stocksOnly(120, false), 0, false), 120u * 60);
 }
 
+TEST(TickerSchedule, RotationRunsAllDayWithMarketHoursOff) {
+  Config c = stocksOnly(30, false);
+  c.symbolCount = 6;  // two grid pages
+  c.rotateMin = 5;
+  const time_t saturday = utc(2026, 10, 17, 16, 0);
+  ASSERT_GT(pageCount(c), 1);
+  EXPECT_TRUE(rotationActive(c, saturday, false));
+  EXPECT_EQ(secondsUntilNextWake(c, saturday, saturday + 30 * 60, 0, true), 5u * 60);
+}
+
 TEST(TickerSchedule, RotationPausesOffHours) {
   EXPECT_TRUE(rotationActive(stocksOnly(), utc(2026, 10, MON, 18, 0), false));
   EXPECT_FALSE(rotationActive(stocksOnly(), utc(2026, 10, 17, 16, 0), true));
@@ -209,8 +219,9 @@ TEST(TickerSymbols, ParseListSeparatorsAndDuplicates) {
 
 TEST(TickerSymbols, ParseListCapsAtMaxSymbols) {
   char out[MAX_SYMBOLS][SYMBOL_LEN] = {};
-  EXPECT_EQ(parseSymbolList("A,B,C,D,E,F", out), MAX_SYMBOLS);
-  EXPECT_STREQ(out[MAX_SYMBOLS - 1], "D");
+  EXPECT_EQ(parseSymbolList("A,B,C,D,E,F,G,H,I,J", out), MAX_SYMBOLS);
+  EXPECT_EQ(MAX_SYMBOLS, 8);
+  EXPECT_STREQ(out[MAX_SYMBOLS - 1], "H");
 }
 
 TEST(TickerSymbols, ParseListEmptyOrJunk) {
@@ -229,6 +240,23 @@ TEST(TickerPages, GridAndRotate) {
   EXPECT_EQ(pageCount(c), 2);
   c.symbolCount = 1;
   EXPECT_EQ(pageCount(c), 1);
+}
+
+TEST(TickerPages, GridIsPagedByFour) {
+  Config c;
+  char syms[MAX_SYMBOLS][SYMBOL_LEN] = {};
+  for (int n : {1, 4, 5, 6, 8}) {
+    c.symbolCount = static_cast<uint8_t>(parseSymbolList("A,B,C,D,E,F,G,H", syms) >= n ? n : 0);
+    EXPECT_EQ(pageCount(c), (n + 3) / 4) << n << " symbols";
+  }
+  c.symbolCount = 6;
+  c.customMode = CUSTOM_EXTRA_PAGE;
+  strcpy(c.customUrl, "http://example.com/a.png");
+  ASSERT_EQ(pageCount(c), 3);  // grid page 1, grid page 2, image
+  EXPECT_FALSE(isCustomPage(c, 1));
+  EXPECT_TRUE(isCustomPage(c, 2));
+  c.layout = LAYOUT_ROTATE;
+  EXPECT_EQ(pageCount(c), 7);  // one page per symbol, then the image
 }
 
 TEST(TickerPages, CustomImageNeedsAUrl) {

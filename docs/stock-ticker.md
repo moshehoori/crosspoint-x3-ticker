@@ -1,6 +1,6 @@
 # Stock Ticker
 
-A low-power stock and crypto dashboard for the **Xteink X3**. The reader shows up to four symbols, such as Intel and Bitcoin, refreshes them over Wi-Fi on a schedule, and spends the time in between in deep sleep. E-ink keeps the image on screen without power.
+A low-power stock and crypto dashboard for the **Xteink X3**. The reader shows up to eight symbols, such as Intel and Bitcoin, refreshes them over Wi-Fi on a schedule, and spends the time in between in deep sleep. E-ink keeps the image on screen without power.
 
 ![Stock Ticker overview: Intel and Bitcoin in the portrait grid, and Bitcoin in the landscape rotate layout](images/stock-ticker/overview.png)
 
@@ -20,7 +20,7 @@ A status line at the bottom shows when the data was fetched, when the next updat
 
 ## Layouts
 
-**All on one screen** draws one card per symbol: a grid of up to 4, stacked in portrait and 2 × 2 in landscape.
+**All on one screen** draws one card per symbol, 4 per page: stacked in portrait and 2 × 2 in landscape. With more than 4 symbols the cards continue on further pages (5–8 symbols make 2 pages), which rotate like any other page, and the status line shows the page, for example "1/2".
 
 | Portrait, 2 symbols | Portrait, 3 symbols |
 | --- | --- |
@@ -49,7 +49,7 @@ A status line at the bottom shows when the data was fetched, when the next updat
 | --- | --- |
 | **Start ticker mode** | Fetches, draws, and starts the sleep-and-refresh cycle. |
 | **Refresh now** | Fetches once and shows a full-screen preview. In the Rotate layout, Confirm or Down flips to the next symbol, and Back returns. |
-| **Symbols** | A comma list of up to 4 [Yahoo Finance](https://finance.yahoo.com) symbols, for example `INTC, BTC-USD, NVDA`. Crypto uses pairs like `BTC-USD` or `ETH-USD`. |
+| **Symbols** | A comma list of up to 8 [Yahoo Finance](https://finance.yahoo.com) symbols, for example `INTC, BTC-USD, NVDA`. Crypto uses pairs like `BTC-USD` or `ETH-USD`. |
 | **Layout** | *All on one screen* or *Rotate*. |
 | **Rotate every** | *Each update*, or every 1, 2, 5 or 10 minutes. Rotation steps redraw from saved data without Wi-Fi. |
 | **Refresh interval** | 5, 10, 15 (default), 30 or 60 minutes, or 2, 3 or 4 hours. |

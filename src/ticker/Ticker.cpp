@@ -337,17 +337,19 @@ void wifiOff() {
   }
 }
 
-bool fetchQuotes(const Config& cfg, time_t now) {
+namespace {
+// One Yahoo spark request for cfg.symbols[first .. first+count); returns quotes updated.
+int fetchBatch(const Config& cfg, int first, int count, time_t now) {
   if (ESP.getFreeHeap() < HttpDownloader::MIN_TLS_FREE_HEAP ||
       ESP.getMaxAllocHeap() < HttpDownloader::MIN_TLS_MAX_ALLOC) {
     LOG_ERR("TICK", "Not enough heap for TLS: %u free, %u max", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
     gLastError = FetchError::Memory;
-    return false;
+    return -1;
   }
   char url[192];
   int n = snprintf(url, sizeof(url), "https://query1.finance.yahoo.com/v7/finance/spark?symbols=");
-  for (int i = 0; i < cfg.symbolCount && n < static_cast<int>(sizeof(url)); i++) {
-    n += snprintf(url + n, sizeof(url) - n, "%s%s", i ? "," : "", cfg.symbols[i]);
+  for (int i = first; i < first + count && n < static_cast<int>(sizeof(url)); i++) {
+    n += snprintf(url + n, sizeof(url) - n, "%s%s", i > first ? "," : "", cfg.symbols[i]);
   }
   if (n < static_cast<int>(sizeof(url))) snprintf(url + n, sizeof(url) - n, "&range=1d&interval=15m");
 
@@ -357,7 +359,7 @@ bool fetchQuotes(const Config& cfg, time_t now) {
   if (!HttpDownloader::fetchUrl(url, body)) {
     LOG_ERR("TICK", "Fetch failed");
     gLastError = FetchError::Network;
-    return false;
+    return -1;
   }
 
   JsonDocument filter;
@@ -381,13 +383,13 @@ bool fetchQuotes(const Config& cfg, time_t now) {
   if (err) {
     LOG_ERR("TICK", "JSON parse: %s", err.c_str());
     gLastError = FetchError::Data;
-    return false;
+    return -1;
   }
 
   int updated = 0;
   for (JsonObjectConst entry : doc["spark"]["result"].as<JsonArrayConst>()) {
     if (!parseSparkEntry(entry, gScratch)) continue;
-    for (int i = 0; i < cfg.symbolCount; i++) {
+    for (int i = first; i < first + count; i++) {
       if (strcmp(cfg.symbols[i], gScratch.symbol) != 0) continue;
       gScratch.fetchedAt = now;
       gQuotes[i] = gScratch;
@@ -396,9 +398,30 @@ bool fetchQuotes(const Config& cfg, time_t now) {
               gScratch.pointCount, gScratch.crypto ? ", crypto" : "");
     }
   }
-  if (updated == 0) LOG_ERR("TICK", "No usable quotes in response");
-  gLastError = updated > 0 ? FetchError::None : FetchError::Data;
-  return updated > 0;
+  return updated;
+}
+}  // namespace
+
+bool fetchQuotes(const Config& cfg, time_t now) {
+  // Batches of FETCH_BATCH_SIZE keep each response (and its parse) small on the C3 heap.
+  int updated = 0;
+  bool anyFailed = false;
+  for (int first = 0; first < cfg.symbolCount; first += FETCH_BATCH_SIZE) {
+    const int count = cfg.symbolCount - first < FETCH_BATCH_SIZE ? cfg.symbolCount - first : FETCH_BATCH_SIZE;
+    const int got = fetchBatch(cfg, first, count, now);
+    if (got < 0) {
+      anyFailed = true;
+    } else {
+      updated += got;
+    }
+  }
+  if (updated == 0) {
+    LOG_ERR("TICK", "No usable quotes");
+    if (!anyFailed) gLastError = FetchError::Data;
+    return false;
+  }
+  gLastError = FetchError::None;
+  return true;  // partial success still refreshes what it could; missing symbols keep their cached quote
 }
 
 FetchError lastError() { return gLastError; }

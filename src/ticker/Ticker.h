@@ -12,7 +12,9 @@ class GfxRenderer;
 
 namespace ticker {
 
-constexpr int MAX_SYMBOLS = 4;
+constexpr int MAX_SYMBOLS = 8;
+constexpr int GRID_PAGE_SIZE = 4;    // "All on one screen" shows up to 4 cards per page
+constexpr int FETCH_BATCH_SIZE = 4;  // symbols per Yahoo request, keeps each response small for the heap
 constexpr int SYMBOL_LEN = 12;
 constexpr int MAX_POINTS = 48;  // intraday points kept per symbol (24h crypto is downsampled)
 constexpr uint8_t INTERVALS[] = {5, 10, 15, 30, 60, 120, 180, 240};  // minutes; uint8_t caps this at 255

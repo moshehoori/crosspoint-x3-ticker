@@ -182,7 +182,7 @@ void TickerActivity::buildScreen(UiScreen& screen) {
   screen.spacer(static_cast<int16_t>(metrics.verticalSpacing));
 
   const auto& cfg = ticker::config();
-  char buf[64];
+  char buf[ticker::MAX_SYMBOLS * (ticker::SYMBOL_LEN + 2)];
   rowValues_[ROW_START].clear();
   const time_t fetched = latestFetch();
   if (fetched > 0) {

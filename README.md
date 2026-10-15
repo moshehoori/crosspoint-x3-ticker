@@ -4,7 +4,7 @@ This is a fork of [CrossPoint Reader](https://github.com/crosspoint-reader/cross
 
 ![Stock Ticker on the X3: Intel and Bitcoin in the portrait grid, and Bitcoin in the landscape layout](docs/images/stock-ticker/overview.png)
 
-- **Up to 4 symbols**, such as `INTC`, `BTC-USD` and `NVDA`, with price, change today, an intraday chart, day range and volume
+- **Up to 8 symbols**, such as `INTC`, `BTC-USD` and `NVDA`, with price, change today, an intraday chart, day range and volume
 - **Two layouts:** all on one screen, or rotating one full screen per symbol, in portrait or landscape
 - **Low power:** the reader deep-sleeps between updates while e-ink holds the image, wakes on a timer, refreshes over your saved Wi-Fi in a few seconds, and sleeps again
 - **Market-hours aware:** stocks update only while the New York market is open, and crypto keeps updating hourly overnight

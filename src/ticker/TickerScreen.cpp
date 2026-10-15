@@ -408,11 +408,16 @@ void drawCard(const GfxRenderer& r, const Quote& q, const char* symbol, int x, i
   if (chartH > 24) drawChart(r, q, x, priceBottom, w, chartH, false);
 }
 
-void drawGrid(const GfxRenderer& r, const Config& cfg, int W, int statusTop) {
-  const int n = cfg.symbolCount;
+// One grid page: symbols [page * GRID_PAGE_SIZE, +GRID_PAGE_SIZE). Cells are sized for a
+// full page on every page, so a short last page keeps the same card size.
+void drawGrid(const GfxRenderer& r, const Config& cfg, int W, int statusTop, int page) {
+  const int first = page * GRID_PAGE_SIZE;
+  const int n = cfg.symbolCount - first < GRID_PAGE_SIZE ? cfg.symbolCount - first : GRID_PAGE_SIZE;
+  if (n <= 0) return;
+  const int slots = cfg.symbolCount < GRID_PAGE_SIZE ? cfg.symbolCount : GRID_PAGE_SIZE;
   const bool landscape = W > r.getScreenHeight();
-  const int cols = (landscape && n > 1) ? 2 : 1;
-  const int rows = (n + cols - 1) / cols;
+  const int cols = (landscape && slots > 1) ? 2 : 1;
+  const int rows = (slots + cols - 1) / cols;
   const int top = 8;
   const int areaH = statusTop - 12 - top;
   const int cellW = W / cols;
@@ -420,7 +425,7 @@ void drawGrid(const GfxRenderer& r, const Config& cfg, int W, int statusTop) {
   for (int i = 0; i < n; i++) {
     const int cx = (i % cols) * cellW;
     const int cy = top + (i / cols) * cellH;
-    drawCard(r, quotes()[i], cfg.symbols[i], cx + 8, cy, cellW - 16, cellH);
+    drawCard(r, quotes()[first + i], cfg.symbols[first + i], cx + 8, cy, cellW - 16, cellH);
     if (i / cols < rows - 1) r.drawLine(cx + MARGIN, cy + cellH, cx + cellW - MARGIN, cy + cellH, true);
     if (cols == 2 && i % 2 == 0) r.drawLine(cx + cellW, cy + 16, cx + cellW, cy + cellH - 16, true);
   }
@@ -449,7 +454,12 @@ void drawStatus(const GfxRenderer& r, const Config& cfg, const ScreenStatus& s, 
     n += snprintf(line + n, sizeof(line) - n, "%s%s %s", n ? "   |   " : "", tr(STR_TICKER_NEXT), t2);
   }
   if (s.battery >= 0 && n < static_cast<int>(sizeof(line))) {
-    snprintf(line + n, sizeof(line) - n, "%s%s %d%%", n ? "   |   " : "", tr(STR_BATTERY), s.battery);
+    n += snprintf(line + n, sizeof(line) - n, "%s%s %d%%", n ? "   |   " : "", tr(STR_BATTERY), s.battery);
+  }
+  // Grid with more than one page of symbols: say which page this is.
+  const int gridPages = (cfg.symbolCount + GRID_PAGE_SIZE - 1) / GRID_PAGE_SIZE;
+  if (cfg.layout == LAYOUT_GRID && gridPages > 1 && n < static_cast<int>(sizeof(line))) {
+    snprintf(line + n, sizeof(line) - n, "%s%d/%d", n ? "   |   " : "", s.pageIndex % pageCount(cfg) + 1, gridPages);
   }
   if (n == 0 && s.battery < 0) line[0] = '\0';
 
@@ -516,7 +526,7 @@ void drawScreen(GfxRenderer& r, const Config& cfg, const ScreenStatus& s) {
     const int sym = cfg.symbolCount > 0 ? page % cfg.symbolCount : 0;
     drawSinglePage(r, quotes()[sym], cfg.symbols[sym], sym, cfg.symbolCount, W, statusTop);
   } else {
-    drawGrid(r, cfg, W, statusTop);
+    drawGrid(r, cfg, W, statusTop, page);
   }
   drawStatus(r, cfg, s, bottom);
 

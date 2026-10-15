@@ -120,7 +120,8 @@ bool wantsQuotes(const Config& cfg) { return !(customEnabled(cfg) && cfg.customM
 
 int pageCount(const Config& cfg) {
   if (!wantsQuotes(cfg)) return 1;
-  const int base = (cfg.layout == LAYOUT_ROTATE && cfg.symbolCount > 1) ? cfg.symbolCount : 1;
+  const int n = cfg.symbolCount > 0 ? cfg.symbolCount : 1;
+  const int base = (cfg.layout == LAYOUT_ROTATE && n > 1) ? n : (n + GRID_PAGE_SIZE - 1) / GRID_PAGE_SIZE;
   return base + (customEnabled(cfg) ? 1 : 0);
 }
 

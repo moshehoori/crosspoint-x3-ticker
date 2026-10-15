@@ -138,7 +138,7 @@ This writes `FOO_LOGO_W`, `FOO_LOGO_H` and `FooLogo[]` (1 bpp, MSB-first, bit 1 
 
 ## Ideas
 
-- Raise the limit above 4 symbols for the Rotate layout (`MAX_SYMBOLS`), or use a 2 × 3 landscape grid
+- A 2 × 3 landscape grid (6 cards per page) as an option
 - Exchange holiday calendar
 - Partial e-ink refresh for rotation-only wakes
 - Price alerts with an inverted card when a threshold is crossed
