@@ -11,8 +11,13 @@
 #include "CrossPointSettings.h"
 #include "Ticker.h"
 #include "fontIds.h"
+#include "images/AmazonLogo.h"
 #include "images/BitcoinLogo.h"
+#include "images/GoogleLogo.h"
 #include "images/IntelLogo.h"
+#include "images/MicrosoftLogo.h"
+#include "images/NvidiaLogo.h"
+#include "images/PalantirLogo.h"
 
 namespace ticker {
 namespace {
@@ -27,14 +32,30 @@ struct Logo {
 };
 
 // Only symbols with a bundled logo get one; the rest show their ticker text.
+struct LogoEntry {
+  const char* symbol;  // exact symbol, or a prefix ending in '-' for crypto pairs (BTC-USD, BTC-EUR)
+  Logo logo;
+};
+
+constexpr LogoEntry LOGOS[] = {
+    {"INTC", {IntelLogo, INTEL_LOGO_W, INTEL_LOGO_H}},
+    {"BTC-", {BitcoinLogo, BITCOIN_LOGO_W, BITCOIN_LOGO_H}},
+    {"PLTR", {PalantirLogo, PALANTIR_LOGO_W, PALANTIR_LOGO_H}},
+    {"AMZN", {AmazonLogo, AMAZON_LOGO_W, AMAZON_LOGO_H}},
+    {"GOOG", {GoogleLogo, GOOGLE_LOGO_W, GOOGLE_LOGO_H}},
+    {"GOOGL", {GoogleLogo, GOOGLE_LOGO_W, GOOGLE_LOGO_H}},
+    {"NVDA", {NvidiaLogo, NVIDIA_LOGO_W, NVIDIA_LOGO_H}},
+    {"MSFT", {MicrosoftLogo, MICROSOFT_LOGO_W, MICROSOFT_LOGO_H}},
+};
+
 bool logoFor(const char* symbol, Logo& out) {
-  if (strcmp(symbol, "INTC") == 0) {
-    out = {IntelLogo, INTEL_LOGO_W, INTEL_LOGO_H};
-    return true;
-  }
-  if (strncmp(symbol, "BTC-", 4) == 0) {
-    out = {BitcoinLogo, BITCOIN_LOGO_W, BITCOIN_LOGO_H};
-    return true;
+  for (const LogoEntry& e : LOGOS) {
+    const size_t n = strlen(e.symbol);
+    const bool prefix = n > 0 && e.symbol[n - 1] == '-';
+    if (prefix ? strncmp(symbol, e.symbol, n) == 0 : strcmp(symbol, e.symbol) == 0) {
+      out = e.logo;
+      return true;
+    }
   }
   return false;
 }

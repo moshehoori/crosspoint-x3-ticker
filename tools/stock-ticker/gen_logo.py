@@ -1,12 +1,26 @@
 """Usage: gen_logo.py in.svg out.h width Name. Rasterize a logo SVG to a 1-bit C header for CrossPoint (bit=1 is ink, MSB-first, row-major)."""
-import subprocess, sys
+import io, subprocess, sys
 from PIL import Image
 
 svg, out, width, name = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4]
 UP = name.upper()
 png = out + ".png"
-subprocess.run(["convert", "-background", "white", "-density", "1200", svg, "-resize", f"{width}x",
-                "-flatten", png], check=True)
+try:
+    # cairosvg renders complex paths that ImageMagick's built-in SVG reader drops
+    # (it lost a letter of the Amazon wordmark). Render large, then downscale.
+    import cairosvg
+
+    if not svg.lower().endswith(".svg"):
+        raise ImportError("not an SVG")
+    big = io.BytesIO(cairosvg.svg2png(url=svg, output_width=width * 8))
+    src = Image.open(big).convert("RGBA")
+    flat = Image.new("RGBA", src.size, (255, 255, 255, 255))
+    flat.alpha_composite(src)
+    h = round(src.height * width / src.width)
+    flat.convert("RGB").resize((width, h), Image.LANCZOS).save(png)
+except ImportError:
+    subprocess.run(["convert", "-background", "white", "-density", "1200", svg, "-resize", f"{width}x",
+                    "-flatten", png], check=True)
 im = Image.open(png).convert("RGB")
 w, h = im.size
 rows, row_bytes = [], (w + 7) // 8
