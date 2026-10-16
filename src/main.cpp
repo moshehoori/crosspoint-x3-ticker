@@ -15,6 +15,7 @@
 #include <HalTiltSensor.h>
 #include <I18n.h>
 #include <Logging.h>
+#include <Preferences.h>
 #include <SPI.h>
 #include <VectorFontSupport.h>
 #include <WiFi.h>
@@ -480,12 +481,12 @@ static void appendBootLog(const char* line) {
   if (f) f.write(line, strlen(line));
 }
 
-static void logBoot() {
-  char line[128];
-  snprintf(line, sizeof(line), "%lld,boot,reset=%s,wake=%s,usb=%d,bat=%d,ver=%s\n",
+static void logBoot(uint32_t seq) {
+  char line[144];
+  snprintf(line, sizeof(line), "%lld,boot,reset=%s,wake=%s,usb=%d,bat=%d,seq=%lu,ver=%s\n",
            static_cast<long long>(ticker::nowUtc()), resetReasonName(esp_reset_reason()),
            wakeCauseName(esp_sleep_get_wakeup_cause()), gpio.isUsbConnected() ? 1 : 0,
-           static_cast<int>(powerManager.getBatteryPercentage()), CROSSPOINT_VERSION);
+           static_cast<int>(powerManager.getBatteryPercentage()), static_cast<unsigned long>(seq), CROSSPOINT_VERSION);
   appendBootLog(line);
 }
 
@@ -618,16 +619,36 @@ static void logBoot() {
 }
 
 void setup() {
+  // A ticker wake: the RTC timer, or the wake watchdog's restart of a hung wake.
+  const bool tickerBoot =
+      (esp_reset_reason() == ESP_RST_DEEPSLEEP && esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER) ||
+      (esp_reset_reason() == ESP_RST_SW && tickerResumeMagic == TICKER_RESUME_MAGIC);
 #if FREEINK_MCU_C3 && (FREEINK_DEVICE_X3 || FREEINK_DEVICE_X4)
-  // GPIO13 gates the battery on the Xteink C3 boards. A ticker timer wake arrives with
-  // it held HIGH; the SD driver later releases that hold and re-drives the pin, and
-  // with the output register still at its reset value of 0 the pad would glitch LOW
-  // and cut battery power. Load HIGH into the register first, then release the hold.
-  // (The factory firmware also drives GPIO13 HIGH at boot, so this is a no-op otherwise.)
+  // GPIO13 gates the battery on the Xteink C3 boards. Load HIGH into its output register
+  // before anything can release a hold, so the pad never glitches LOW.
   gpio_set_level(GPIO_NUM_13, 1);
   gpio_set_direction(GPIO_NUM_13, GPIO_MODE_OUTPUT);
-  gpio_hold_dis(GPIO_NUM_13);
+  if (tickerBoot) {
+    // On battery a ticker wake has nothing else keeping the board powered, so leave the
+    // pin held HIGH for the whole wake ("hold it, don't drive it") and keep the SD driver
+    // off it (see sdPowerEnable below). It is released only for a deliberate power-off.
+    gpio_hold_en(GPIO_NUM_13);
+  } else {
+    gpio_hold_dis(GPIO_NUM_13);
+  }
 #endif
+  // Power-loss breadcrumb: count ticker wakes in flash (survives power loss) before any
+  // other work. After an unexplained stop, a count ahead of the last SD log line means the
+  // chip woke and died in early boot; an equal count means it lost power while asleep.
+  uint32_t tickerBootSeq = 0;
+  {
+    Preferences prefs;
+    if (prefs.begin("tickdiag", false)) {
+      tickerBootSeq = prefs.getUInt("seq", 0);
+      if (tickerBoot) prefs.putUInt("seq", ++tickerBootSeq);
+      prefs.end();
+    }
+  }
   BoardConfig::holdPowerRails();
 
 #ifdef ENABLE_SERIAL_LOG
@@ -685,6 +706,14 @@ void setup() {
 
   // SD Card Initialization
   // We need 6 open files concurrently when parsing a new chapter
+#if FREEINK_MCU_C3 && (FREEINK_DEVICE_X3 || FREEINK_DEVICE_X4)
+  if (tickerBoot && BoardConfig::ACTIVE.sd.powerEnable == GPIO_NUM_13) {
+    // The X3 profile lists GPIO13 as the SD power enable, and SD init releases its hold and
+    // reconfigures the pin. Keep it HIGH and held instead: the card stays powered, which it
+    // already was through the ticker sleep.
+    BoardConfig::ACTIVE.sd.powerEnable = -1;
+  }
+#endif
   if (!Storage.begin()) {
     LOG_ERR("MAIN", "SD card initialization failed");
     setupDisplayAndFonts(isSilentReboot);
@@ -725,7 +754,7 @@ void setup() {
   // light off unless Restore Light on Wake is enabled; silent maintenance
   // reboots replay the live state captured at restart, so they neither go dark
   // nor light up against the user's wake preference.
-  logBoot();
+  logBoot(tickerBootSeq);
   const bool tickerConfigLoaded = ticker::loadConfig();
   const bool tickerResumed = tickerResumeMagic == TICKER_RESUME_MAGIC;
   tickerResumeMagic = 0;

@@ -82,12 +82,18 @@ void HalPowerManager::startDeepSleep(HalGPIO& gpio, const uint32_t timerWakeSeco
     // Release any surviving pad hold first: hold_en survives deep sleep via
     // the SDK's deepSleep() (esp_sleep_config_gpio_isolate +
     // gpio_deep_sleep_hold_en), and a held pad silently ignores the drive.
-    // Level before direction/hold release, so keeping it ON never glitches LOW.
-    gpio_set_level(XTEINK_C3_GPIO13, keepPowerOn ? 1 : 0);
-    gpio_set_direction(XTEINK_C3_GPIO13, GPIO_MODE_OUTPUT);
-    gpio_hold_dis(XTEINK_C3_GPIO13);
-    gpio_set_level(XTEINK_C3_GPIO13, keepPowerOn ? 1 : 0);
-    gpio_hold_en(XTEINK_C3_GPIO13);
+    if (keepPowerOn) {
+      // Re-arm the hold without ever releasing it: setting the register while held does not
+      // move the pad, so the battery gate cannot see a LOW.
+      gpio_set_level(XTEINK_C3_GPIO13, 1);
+      gpio_set_direction(XTEINK_C3_GPIO13, GPIO_MODE_OUTPUT);
+      gpio_hold_en(XTEINK_C3_GPIO13);
+    } else {
+      gpio_hold_dis(XTEINK_C3_GPIO13);
+      gpio_set_direction(XTEINK_C3_GPIO13, GPIO_MODE_OUTPUT);
+      gpio_set_level(XTEINK_C3_GPIO13, 0);
+      gpio_hold_en(XTEINK_C3_GPIO13);
+    }
   }
 #endif
 
